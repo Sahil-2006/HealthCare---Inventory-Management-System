@@ -1,0 +1,14 @@
+{
+  "name": "medripple",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MEDRIPPLE prototype workspace",
+  "scripts": {
+    "dev": "pnpm --filter @medripple/backend dev",
+    "start": "pnpm --filter @medripple/backend start",
+    "test": "pnpm --filter @medripple/backend test",
+    "check": "pnpm --filter @medripple/backend check"
+  },
+  "packageManager": "pnpm@11.19.0"
+}
+
