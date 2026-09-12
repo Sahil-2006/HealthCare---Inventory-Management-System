@@ -32,6 +32,28 @@ function project(row) {
   };
 }
 
+function toScenarioProfile(row) {
+  return {
+    facilityId: row.facilityCode,
+    facilityName: row.facilityName,
+    medicineId: String(row.medicineId),
+    medicine: {
+      id: String(row.medicineId),
+      genericName: row.genericName,
+      strength: `${row.strengthValue} ${row.strengthUnit}`,
+      dosageForm: row.form,
+      unit: row.unit,
+      criticality: row.criticality,
+      requiresColdChain: Number(row.requiresColdChain) === 1
+    },
+    ...project(row),
+    hasColdChain: Number(row.hasColdChain) === 1,
+    requiresColdChain: Number(row.requiresColdChain) === 1,
+    incomingSupply: asNumber(row.incomingSupply),
+    incomingArrivalDay: row.incomingArrivalDay === null ? null : Number(row.incomingArrivalDay)
+  };
+}
+
 function createPoolOptions(config) {
   if (config.databaseUrl) return config.databaseUrl;
   return {
@@ -99,6 +121,7 @@ function createMysqlStore(config, dependencies = {}) {
           f.longitude,
           f.population_served AS populationServed,
           f.remoteness_score AS remotenessScore,
+          f.has_cold_chain AS hasColdChain,
           m.medicine_id AS medicineId,
           m.generic_name AS genericName,
           m.strength_value AS strengthValue,
@@ -106,12 +129,14 @@ function createMysqlStore(config, dependencies = {}) {
           m.form,
           m.base_unit AS unit,
           m.criticality_level AS criticality,
+          m.requires_cold_chain AS requiresColdChain,
           COALESCE(stock.effective_stock, 0) AS effectiveStock,
           COALESCE(stock.recorded_stock, 0) AS recordedStock,
           COALESCE(demand.daily_demand, 0) AS dailyDemand,
           COALESCE(safety.safety_stock_qty, 0) AS protectedStock,
           COALESCE(incoming.quantity, 0) AS incomingSupply,
-          incoming.expected_arrival_date AS incomingDate
+          incoming.expected_arrival_date AS incomingDate,
+          DATEDIFF(incoming.expected_arrival_date, ?) AS incomingArrivalDay
        FROM facilities f
        CROSS JOIN medicines m
        LEFT JOIN (
@@ -144,7 +169,7 @@ function createMysqlStore(config, dependencies = {}) {
        ) incoming ON incoming.facility_id = f.facility_id AND incoming.medicine_id = m.medicine_id
        WHERE m.medicine_id = ?
        ORDER BY f.facility_id`,
-      [config.simulationDate, config.simulationDate, config.simulationDate, config.simulationDate, medicine.id]
+      [config.simulationDate, config.simulationDate, config.simulationDate, config.simulationDate, config.simulationDate, medicine.id]
     );
   }
 
@@ -182,6 +207,103 @@ function createMysqlStore(config, dependencies = {}) {
         incomingDate: row.incomingDate || null,
         dataFreshness: `SIMULATED DATABASE AS OF ${config.simulationDate}`
       }));
+    },
+    async getScenarioProfile(facilityId, medicineId) {
+      const medicine = await resolveMedicine(medicineId);
+      if (!medicine) return null;
+      const rows = await listFacilityMedicineRows(medicine);
+      const row = rows.find((item) => item.facilityCode === facilityId || String(item.facilityId) === String(facilityId));
+      return row ? toScenarioProfile(row) : null;
+    },
+    async listScenarioProfiles(medicineId) {
+      const medicine = await resolveMedicine(medicineId);
+      if (!medicine) return [];
+      const rows = await listFacilityMedicineRows(medicine);
+      return rows.map(toScenarioProfile);
+    },
+    async getRoute(fromFacilityId, toFacilityId) {
+      const [source, destination] = await Promise.all([resolveFacility(fromFacilityId), resolveFacility(toFacilityId)]);
+      if (!source || !destination) return null;
+      const rows = await query(
+        `SELECT distance_km AS distanceKm, transport_time_hours AS travelHours,
+                cold_chain_capable AS coldChainAvailable
+         FROM routes WHERE origin_facility_id = ? AND destination_facility_id = ? LIMIT 1`,
+        [source.id, destination.id]
+      );
+      return rows[0] ? { ...rows[0], coldChainAvailable: Number(rows[0].coldChainAvailable) === 1 } : null;
+    },
+    async selectTransferBatch(facilityId, medicineId) {
+      const [facility, medicine] = await Promise.all([resolveFacility(facilityId), resolveMedicine(medicineId)]);
+      if (!facility || !medicine) return null;
+      const rows = await query(
+        `SELECT b.batch_id AS batchId, b.batch_number AS batchNo
+         FROM inventory i JOIN batches b ON b.batch_id = i.batch_id
+         WHERE i.facility_id = ? AND b.medicine_id = ?
+           AND i.status = 'AVAILABLE' AND b.quarantined = FALSE AND b.expiry_date >= ?
+         ORDER BY b.expiry_date ASC, b.batch_id ASC LIMIT 1`,
+        [facility.id, medicine.id, config.simulationDate]
+      );
+      return rows[0] || null;
+    },
+    async recordPlanDecision({ plan, decision, actor, note, beforeState, afterState }) {
+      let connection;
+      try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const auditEvents = [];
+        const status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+        for (const transfer of plan.transfers) {
+          const [transferResult] = await connection.query(
+            `INSERT INTO transfers (
+              origin_facility_id, destination_facility_id, medicine_id, batch_id, quantity,
+              status, rejection_reason, approved_at, approved_by, note
+            )
+            SELECT source.facility_id, destination.facility_id, ?, ?, ?, ?, ?,
+                   CASE WHEN ? = 'APPROVED' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                   CASE WHEN ? = 'APPROVED' THEN ? ELSE NULL END, ?
+            FROM facilities source CROSS JOIN facilities destination
+            WHERE source.facility_code = ? AND destination.facility_code = ?`,
+            [
+              transfer.medicineId, transfer.batchId, transfer.quantity, status,
+              decision === 'REJECT' ? note : null, status, status, actor, note,
+              transfer.fromFacilityId, transfer.toFacilityId
+            ]
+          );
+          if (transferResult.affectedRows !== 1) {
+            throw new AppError(422, 'TRANSFER_PERSISTENCE_FAILED', 'A plan transfer could not be mapped to database facilities.');
+          }
+          const [auditResult] = await connection.query(
+            `INSERT INTO audit_events (
+              entity_type, entity_id, action, actor, note, before_state_json, after_state_json
+            ) VALUES ('transfer', ?, ?, ?, ?, ?, ?)`,
+            [
+              transferResult.insertId,
+              decision === 'APPROVE' ? 'APPROVE' : 'REJECT',
+              actor,
+              note,
+              JSON.stringify(beforeState),
+              JSON.stringify(afterState)
+            ]
+          );
+          auditEvents.push({ id: auditResult.insertId, transferId: transferResult.insertId });
+        }
+        await connection.commit();
+        return { storage: 'MYSQL', auditId: auditEvents[0]?.id, auditEvents };
+      } catch (error) {
+        if (connection) await connection.rollback();
+        if (error instanceof AppError) throw error;
+        throw new AppError(503, 'DATABASE_UNAVAILABLE', 'The MEDRIPPLE database could not store the plan decision.', { databaseCode: error.code });
+      } finally {
+        connection?.release();
+      }
+    },
+    async listAuditEvents() {
+      return query(
+        `SELECT audit_id AS id, entity_type AS entityType, entity_id AS entityId, action,
+                actor, note, before_state_json AS beforeState, after_state_json AS afterState,
+                event_timestamp AS timestamp
+         FROM audit_events ORDER BY event_timestamp DESC, audit_id DESC LIMIT 100`
+      );
     },
     async getInventory(facilityId, medicineId = DEFAULT_FIXTURE_MEDICINE_ID) {
       const [facility, medicine] = await Promise.all([resolveFacility(facilityId), resolveMedicine(medicineId)]);

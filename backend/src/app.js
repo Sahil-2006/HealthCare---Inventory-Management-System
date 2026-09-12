@@ -39,7 +39,7 @@ function createApp(config) {
       meta: { requestId: response.locals.requestId }
     });
   }));
-  app.use('/api', createApiRouter({ intelligenceAdapter: createIntelligenceAdapter(config), inventoryStore }));
+  app.use('/api', createApiRouter({ intelligenceAdapter: createIntelligenceAdapter(config, inventoryStore), inventoryStore }));
   app.use((request, response, next) => next(new AppError(404, 'NOT_FOUND', 'The requested route does not exist.')));
   app.use((error, request, response, next) => {
     const knownError = error instanceof AppError;

@@ -74,6 +74,12 @@ test('safe plan can be approved and creates an audit record', async () => {
   assert.equal(approval.response.status, 200);
   assert.equal(approval.body.data.plan.status, 'APPROVED');
   assert.equal(approval.body.data.audit.action, 'PLAN_APPROVED');
+  assert.equal(approval.body.data.persistence.storage, 'MEMORY');
+
+  const audit = await request('/api/audit');
+  assert.equal(audit.response.status, 200);
+  assert.equal(audit.body.data.length, 1);
+  assert.equal(audit.body.data[0].action, 'PLAN_APPROVED');
 });
 
 test('invalid requests use the documented error envelope', async () => {

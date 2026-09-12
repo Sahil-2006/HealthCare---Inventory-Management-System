@@ -24,9 +24,9 @@ Every failure is shaped as:
 }
 ```
 
-`source` is important: `FIXTURE_*` means deterministic simulated data; `INTELLIGENCE_SERVICE` means Druv's live service answered. A `FIXTURE_FALLBACK` forecast is usable for integration only, not a release result.
+`source` is important: `FIXTURE_*` means deterministic simulated data; `DATABASE_FALLBACK` means the active MySQL records were used while the intelligence service was unavailable; `INTELLIGENCE_SERVICE` means Druv's live service answered. Any fallback forecast is usable for integration only, not a release result.
 
-When `DATA_SOURCE=mysql`, inventory routes read Dhiren's seeded MySQL database and return `source: "MYSQL"`. Facility IDs are then stable database `facility_code` values such as `PHC-VLR-001`; medicine IDs are the database medicine IDs, while the fixture alias `med-insulin-100iu-vial` remains accepted for the default insulin view.
+When `DATA_SOURCE=mysql`, inventory, simulation, optimization, approval, and audit routes use Dhiren's seeded MySQL database and return `source: "MYSQL"`. Facility IDs are then stable database `facility_code` values such as `PHC-VLR-001`; medicine IDs are the database medicine IDs, while the fixture alias `med-insulin-100iu-vial` remains accepted for the default insulin view.
 
 ## Routes
 
@@ -110,6 +110,8 @@ The return includes `id`, `status`, `transfers`, `rationale`, `assumptions`, and
 | 404 | `NOT_FOUND`, `FACILITY_NOT_FOUND`, `FORECAST_TARGET_NOT_FOUND`, `OPTIMIZATION_TARGET_NOT_FOUND`, `PLAN_NOT_FOUND` | Resource or target is unavailable |
 | 409 | `PLAN_ALREADY_DECIDED` | A final decision already exists |
 | 422 | `NO_SAFE_PLAN` | No compliant fixture plan could be produced |
+| 422 | `TRANSFER_PERSISTENCE_FAILED` | A decision could not be mapped to the seeded transfer records |
+| 503 | `DATABASE_UNAVAILABLE` | MySQL is not reachable or has not been seeded |
 | 500 | `INTERNAL_ERROR` | Unexpected server failure |
 
 ## Integration requirements

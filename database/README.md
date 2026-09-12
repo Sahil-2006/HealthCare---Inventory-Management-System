@@ -1,6 +1,6 @@
 # MEDRIPPLE MySQL database
 
-`schema.sql` is Dhiren's deterministic schema-and-seed script. It creates the `medripple` database with 10 facilities, 12 medicines, batches, 75 days of consumption history, safety stock, replenishments, routes, transfers, and audit events. All records are simulated.
+`schema.sql` is Dhiren's deterministic schema-and-seed script. It creates the `medripple` database with 10 facilities, 12 medicines, batches, 75 days of consumption history, safety stock, replenishments, routes, transfers, and audit events. `golden-scenario.sql` then creates the deterministic Vellore PHC insulin-shortage demo. All records are simulated.
 
 ## Start locally
 
@@ -22,7 +22,7 @@ To connect the backend, copy `.env.example` to `.env` and change:
 DATA_SOURCE=mysql
 ```
 
-Then run `pnpm dev`. `/health` should report `"dataSource": "MYSQL"`. The current MySQL read model powers regional summary, facilities, medicines, and facility inventory. Forecast, simulation, optimisation, and approval endpoints still retain deterministic integration fixtures until Druv's intelligence contract and the final scenario rules are connected.
+Then run `pnpm dev`. `/health` should report `"dataSource": "MYSQL"`. The MySQL backend powers regional summary, facilities, medicines, inventory, scenario simulation, safe-plan generation, and plan approval/rejection audit persistence. Forecast remains a clearly labelled fallback until Druv's intelligence service is connected.
 
 ## Resetting the database
 

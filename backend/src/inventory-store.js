@@ -15,6 +15,24 @@ function createFixtureStore() {
     },
     async listMedicines() {
       return [fixture.medicine];
+    },
+    async getScenarioProfile(facilityId, medicineId) {
+      return fixture.getScenarioProfile(facilityId, medicineId);
+    },
+    async listScenarioProfiles(medicineId) {
+      return fixture.listScenarioProfiles(medicineId);
+    },
+    async getRoute(fromFacilityId, toFacilityId) {
+      return fixture.getRoute(fromFacilityId, toFacilityId);
+    },
+    async selectTransferBatch(facilityId, medicineId) {
+      return fixture.selectTransferBatch(facilityId, medicineId);
+    },
+    async recordPlanDecision() {
+      return { storage: 'MEMORY' };
+    },
+    async listAuditEvents() {
+      return [];
     }
   };
 }
@@ -25,4 +43,3 @@ function createInventoryStore(config) {
 }
 
 module.exports = { createInventoryStore };
-

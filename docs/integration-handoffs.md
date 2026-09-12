@@ -22,5 +22,5 @@ This is the single place for cross-team changes that affect the backend. Add a d
 
 - Navjeevan PHC has 22 simulated usable insulin vials and uses 8 per day; its replenishment arrives on day 8.
 - A 45-vial transfer from District Hospital is rejected because it breaks that donor's protected stock.
-- The fixture optimizer proposes 35 vials from Central District Store and 10 from River CHC, which both retain protected coverage.
+- The fixture optimizer uses Central District Store only when it can retain protected coverage for the selected horizon; it can add another eligible donor when one source does not have enough safe stock.
 - Every result is simulated decision support and must be replaced/validated before release.

@@ -10,7 +10,10 @@
     "check": "pnpm --filter @medripple/backend check",
     "db:up": "docker compose -f database/compose.yaml up -d",
     "db:down": "docker compose -f database/compose.yaml down",
-    "db:logs": "docker compose -f database/compose.yaml logs -f mysql"
+    "db:logs": "docker compose -f database/compose.yaml logs -f mysql",
+    "stack:up": "docker compose up --build -d",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f"
   },
   "packageManager": "pnpm@11.19.0"
 }

@@ -12,6 +12,8 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./migrations/002_add_human_rejected_transfer_status.sql:/docker-entrypoint-initdb.d/02-add-rejected-status.sql:ro
+      - ./golden-scenario.sql:/docker-entrypoint-initdb.d/03-golden-scenario.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_dev_only"]
       interval: 5s
@@ -21,4 +23,3 @@ services:
 
 volumes:
   mysql_data:
-
