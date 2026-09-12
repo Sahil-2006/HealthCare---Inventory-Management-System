@@ -26,6 +26,8 @@ Every failure is shaped as:
 
 `source` is important: `FIXTURE_*` means deterministic simulated data; `INTELLIGENCE_SERVICE` means Druv's live service answered. A `FIXTURE_FALLBACK` forecast is usable for integration only, not a release result.
 
+When `DATA_SOURCE=mysql`, inventory routes read Dhiren's seeded MySQL database and return `source: "MYSQL"`. Facility IDs are then stable database `facility_code` values such as `PHC-VLR-001`; medicine IDs are the database medicine IDs, while the fixture alias `med-insulin-100iu-vial` remains accepted for the default insulin view.
+
 ## Routes
 
 | Method | Route | Purpose |
@@ -33,7 +35,7 @@ Every failure is shaped as:
 | `GET` | `/health` | Server readiness and environment |
 | `GET` | `/api/region/summary` | Resilience score, alerts, earliest stockout, and patient-days at risk |
 | `GET` | `/api/facilities` | Facility coordinates, simulated risk, supply coverage, and safe surplus |
-| `GET` | `/api/facilities/:facilityId/inventory` | Medicine identity, batches, effective/recorded stock, consumption, and incoming supply |
+| `GET` | `/api/facilities/:facilityId/inventory?medicineId=:medicineId` | Medicine identity, batches, effective/recorded stock, consumption, and incoming supply |
 | `GET` | `/api/medicines` | Fixture medicine catalogue |
 | `POST` | `/api/forecast` | Forecast, risk, stockout projection, cause, confidence, and source |
 | `POST` | `/api/scenarios/simulate` | Evaluate proposed transfers and compare baseline vs intervention |
@@ -117,4 +119,3 @@ The return includes `id`, `status`, `transfers`, `rationale`, `assumptions`, and
 - Forecast/simulation results must retain `cause`, `confidence`, freshness, and a human-readable limitation from Druv's contract.
 - Recommendation and rejection language remains pending Aaryan's safety review.
 - Frontend display needs from Samson should be added to this file before client implementation changes.
-

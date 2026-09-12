@@ -8,11 +8,11 @@ function success(response, data, meta = {}) {
   response.json({ data, meta: { ...meta, requestId: response.locals.requestId } });
 }
 
-function createApiRouter({ intelligenceAdapter }) {
+function createApiRouter({ intelligenceAdapter, inventoryStore }) {
   const router = express.Router();
 
-  router.get('/region/summary', (request, response) => {
-    const facilities = store.listFacilities();
+  router.get('/region/summary', asyncHandler(async (request, response) => {
+    const facilities = await inventoryStore.listFacilities();
     const criticalFacilities = facilities.filter((facility) => facility.riskLabel === 'CRITICAL');
     success(response, {
       resilienceScore: 61,
@@ -25,18 +25,22 @@ function createApiRouter({ intelligenceAdapter }) {
         facilityId: facility.facilityId, riskLabel: facility.riskLabel, cause: 'SUPPLY_DELAY', daysRemaining: facility.daysRemaining
       })),
       dataFreshness: 'SIMULATED FIXTURE'
-    }, { source: 'FIXTURE_STORE' });
-  });
+    }, { source: inventoryStore.source });
+  }));
 
-  router.get('/facilities', (request, response) => success(response, store.listFacilities(), { source: 'FIXTURE_STORE' }));
+  router.get('/facilities', asyncHandler(async (request, response) => {
+    success(response, await inventoryStore.listFacilities(), { source: inventoryStore.source });
+  }));
 
-  router.get('/facilities/:facilityId/inventory', (request, response) => {
-    const inventory = store.getInventory(request.params.facilityId);
+  router.get('/facilities/:facilityId/inventory', asyncHandler(async (request, response) => {
+    const inventory = await inventoryStore.getInventory(request.params.facilityId, request.query.medicineId);
     if (!inventory) throw new AppError(404, 'FACILITY_NOT_FOUND', 'The requested facility was not found.');
-    success(response, inventory, { source: 'FIXTURE_STORE' });
-  });
+    success(response, inventory, { source: inventoryStore.source });
+  }));
 
-  router.get('/medicines', (request, response) => success(response, [store.medicine], { source: 'FIXTURE_STORE' }));
+  router.get('/medicines', asyncHandler(async (request, response) => {
+    success(response, await inventoryStore.listMedicines(), { source: inventoryStore.source });
+  }));
 
   router.post('/forecast', asyncHandler(async (request, response) => {
     const input = validateForecastRequest(request.body);
@@ -83,4 +87,3 @@ function createApiRouter({ intelligenceAdapter }) {
 }
 
 module.exports = { createApiRouter };
-

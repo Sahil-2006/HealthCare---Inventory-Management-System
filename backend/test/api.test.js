@@ -7,7 +7,7 @@ let server;
 let baseUrl;
 
 before(async () => {
-  const app = createApp({ environment: 'test', corsOrigins: [], intelligenceServiceUrl: '', intelligenceTimeoutMs: 50 });
+  const app = createApp({ environment: 'test', dataSource: 'fixture', corsOrigins: [], intelligenceServiceUrl: '', intelligenceTimeoutMs: 50 });
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -25,6 +25,7 @@ test('health endpoint identifies the running backend', async () => {
   const { response, body } = await request('/health');
   assert.equal(response.status, 200);
   assert.equal(body.data.status, 'ok');
+  assert.equal(body.data.dataSource, 'FIXTURE_STORE');
 });
 
 test('inventory excludes expired stock from effective stock', async () => {
@@ -83,4 +84,3 @@ test('invalid requests use the documented error envelope', async () => {
   assert.equal(body.error.code, 'INVALID_REQUEST');
   assert.ok(body.meta.requestId);
 });
-
