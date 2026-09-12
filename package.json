@@ -7,7 +7,10 @@
     "dev": "pnpm --filter @medripple/backend dev",
     "start": "pnpm --filter @medripple/backend start",
     "test": "pnpm --filter @medripple/backend test",
-    "check": "pnpm --filter @medripple/backend check"
+    "check": "pnpm --filter @medripple/backend check",
+    "dev:frontend": "pnpm --filter @medripple/frontend dev",
+    "build:frontend": "pnpm --filter @medripple/frontend build",
+    "preview:frontend": "pnpm --filter @medripple/frontend preview"
   },
   "packageManager": "pnpm@11.19.0"
 }
