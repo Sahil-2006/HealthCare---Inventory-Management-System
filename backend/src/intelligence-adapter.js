@@ -1,5 +1,4 @@
 const { AppError } = require('./errors');
-const { getFacility, medicine, projectFacility } = require('./fixture-store');
 
 function validateIntelligenceResponse(payload) {
   if (!payload || typeof payload !== 'object' || !payload.risk || !payload.forecast) {
@@ -11,35 +10,54 @@ function validateIntelligenceResponse(payload) {
   return payload;
 }
 
-function createFixtureForecast({ facilityId, medicineId, horizonDays }) {
-  const facility = getFacility(facilityId);
-  if (!facility || medicineId !== medicine.id) {
+function validateSimulationResponse(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.baseline || !payload.intervention || !payload.comparison) {
+    throw new Error('The intelligence response is missing scenario data.');
+  }
+  if (!Array.isArray(payload.baseline.facilities) || !Array.isArray(payload.intervention.facilities)
+    || !Array.isArray(payload.transferEvaluations) || typeof payload.comparison.safeToRecommend !== 'boolean') {
+    throw new Error('The intelligence response contains an invalid scenario.');
+  }
+  return payload;
+}
+
+async function parseServiceError(response) {
+  const payload = await response.json().catch(() => null);
+  const code = payload?.error?.code || 'INTELLIGENCE_REQUEST_REJECTED';
+  const message = payload?.error?.message || `Intelligence service returned ${response.status}.`;
+  return new AppError(response.status, code, message);
+}
+
+async function createFallbackForecast({ facilityId, medicineId, horizonDays }, inventoryStore) {
+  const profile = await inventoryStore.getScenarioProfile(facilityId, medicineId);
+  if (!profile) {
     throw new AppError(404, 'FORECAST_TARGET_NOT_FOUND', 'The requested facility or medicine was not found.');
   }
-  const projection = projectFacility(facility);
+  const source = inventoryStore.source === 'MYSQL' ? 'DATABASE_FALLBACK' : 'FIXTURE_FALLBACK';
   return {
     forecast: {
-      dailyDemand: facility.dailyDemand,
-      lowerBound: Math.max(0, facility.dailyDemand - 1),
-      upperBound: facility.dailyDemand + 2,
+      dailyDemand: profile.dailyDemand,
+      lowerBound: Math.max(0, profile.dailyDemand * 0.9),
+      upperBound: profile.dailyDemand * 1.1,
       horizonDays
     },
-    risk: { score: projection.riskScore, label: projection.riskLabel },
-    stockout: { daysRemaining: projection.daysRemaining, projectedWithinHorizon: projection.daysRemaining <= horizonDays },
-    confidence: { label: 'LOW', reason: 'Deterministic fixture fallback; awaiting the tested intelligence service.' },
-    cause: facility.id === 'facility-navjeevan-phc' ? 'SUPPLY_DELAY' : 'INVENTORY_IMBALANCE',
-    explanation: facility.id === 'facility-navjeevan-phc'
+    risk: { score: profile.riskScore, label: profile.riskLabel },
+    stockout: { daysRemaining: profile.daysRemaining, projectedWithinHorizon: profile.daysRemaining <= horizonDays },
+    confidence: { label: 'LOW', reason: 'Deterministic fallback; awaiting the tested intelligence service.' },
+    cause: profile.incomingArrivalDay && profile.incomingArrivalDay > profile.daysRemaining ? 'SUPPLY_DELAY' : 'INVENTORY_IMBALANCE',
+    explanation: profile.incomingArrivalDay && profile.incomingArrivalDay > profile.daysRemaining
       ? 'Simulated stock will deplete before the scheduled replenishment arrives.'
       : 'Simulated coverage is based on effective stock and daily demand.',
-    source: 'FIXTURE_FALLBACK',
+    source,
+    isFallback: true,
     decisionSupportOnly: true
   };
 }
 
-function createIntelligenceAdapter(config) {
+function createIntelligenceAdapter(config, inventoryStore) {
   return {
     async forecast(input) {
-      if (!config.intelligenceServiceUrl) return createFixtureForecast(input);
+      if (!config.intelligenceServiceUrl) return createFallbackForecast(input, inventoryStore);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), config.intelligenceTimeoutMs);
@@ -50,14 +68,44 @@ function createIntelligenceAdapter(config) {
           body: JSON.stringify(input),
           signal: controller.signal
         });
-        if (!response.ok) throw new Error(`Intelligence service returned ${response.status}.`);
+        if (!response.ok) {
+          const serviceError = await parseServiceError(response);
+          if (response.status >= 400 && response.status < 500) throw serviceError;
+          throw new Error(serviceError.message);
+        }
         const payload = validateIntelligenceResponse(await response.json());
         return { ...payload, source: 'INTELLIGENCE_SERVICE', decisionSupportOnly: true };
       } catch (error) {
+        if (error instanceof AppError) throw error;
         return {
-          ...createFixtureForecast(input),
+          ...(await createFallbackForecast(input, inventoryStore)),
           fallbackReason: error.name === 'AbortError' ? 'INTELLIGENCE_TIMEOUT' : 'INTELLIGENCE_UNAVAILABLE'
         };
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    async simulate(input) {
+      if (!config.intelligenceServiceUrl) return null;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), config.intelligenceTimeoutMs);
+      try {
+        const response = await fetch(`${config.intelligenceServiceUrl}/scenarios/simulate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const serviceError = await parseServiceError(response);
+          if (response.status >= 400 && response.status < 500) throw serviceError;
+          throw new Error(serviceError.message);
+        }
+        return { ...validateSimulationResponse(await response.json()), source: 'INTELLIGENCE_SERVICE', decisionSupportOnly: true };
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        return null;
       } finally {
         clearTimeout(timeout);
       }
@@ -65,5 +113,4 @@ function createIntelligenceAdapter(config) {
   };
 }
 
-module.exports = { createIntelligenceAdapter, validateIntelligenceResponse };
-
+module.exports = { createIntelligenceAdapter, validateIntelligenceResponse, validateSimulationResponse, createFallbackForecast };

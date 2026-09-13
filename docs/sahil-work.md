@@ -1,15 +1,16 @@
 # Sahil's work board - Software Engineer & Integration Lead
 
-Status as of this workspace setup: **the repository was empty, so all live data and downstream contracts remain pending.** The items below separate work that can move now from handoffs that need named owners.
+Status: backend foundation, MySQL integration, deterministic golden scenario, simulation/optimization, audit persistence, FastAPI forecast/ripple integration, frontend integration mapping, and local container stack are complete. Final clinical rules, public API hosting, and final acceptance still need their owners.
 
 ## Completed now
 
 - [x] Create the shared repository layout: `frontend`, `backend`, `intelligence`, `database`, `docs`, `tests`, and `demo`.
 - [x] Add a runnable Node.js/Express API skeleton with config loading, CORS, request IDs, JSON logging, `/health`, standard success envelopes, and useful errors.
 - [x] Publish a versioned fixture-backed API contract for facility, inventory, forecast, simulation, plan, approval, and audit flows.
-- [x] Build a deterministic insulin golden fixture flow, including excluded expired stock, a PHC supply delay, an unsafe donor rejection, a safe multi-source plan, and approval/audit persistence.
-- [x] Add a FastAPI intelligence adapter with response validation, timeout handling, and a clearly labelled fixture fallback.
+- [x] Build a deterministic insulin golden flow, including excluded expired stock, a PHC supply delay, an unsafe donor rejection, a safe plan, horizon comparison, and approval/audit persistence.
+- [x] Add a FastAPI intelligence adapter with response validation, timeout handling, and a clearly labelled fallback that works with either fixtures or MySQL records.
 - [x] Add automated API tests, one-command local start/test commands, `.env.example`, and a CI workflow.
+- [x] Add full-horizon stock projection, protected-donor feasibility checks, safe-plan generation, MySQL decision/audit persistence, Docker health checks, and deterministic golden-scenario setup.
 
 ## Next work, ordered by dependency
 
@@ -17,18 +18,18 @@ Status as of this workspace setup: **the repository was empty, so all live data 
 
 - [ ] Confirm the exact screen payload fields with Samson and record any additions in `docs/api-contract.md`.
 - [ ] Build a demo-user stub only if it stays separate from the core flow.
-- [ ] Add deployment configuration after the application host is chosen; keep secrets outside Git.
+- [x] Add production-style Docker configuration, health checks, and repeatable local stack commands; a public host selection is still required.
 - [ ] Keep integration tests and README instructions current as interfaces change.
 
 ### Waiting for Dhiren - database/data contract
 
-- [ ] Replace `backend/src/fixture-store.js` with a repository that reads Dhiren's frozen MySQL schema.
-- [ ] Add migrations, deterministic seed/reset, and validation for table names, units, exact medicine identity, batch state, expiry, routes, and replenishments.
-- [ ] Re-test all inventory, region-summary, effective-stock, and audit APIs against the real seed.
+- [x] Add a switchable MySQL repository that reads Dhiren's schema while retaining deterministic fixtures for offline integration.
+- [x] Add Compose initialization, a deterministic golden scenario, and validation for base units, exact medicine identity, batch state, expiry, routes, and replenishments.
+- [x] Connect inventory, region summary, scenario simulation, plan optimization, approval, and audit reads/writes to the MySQL implementation; live database execution still needs Docker/MySQL on the development machine.
 
 ### Waiting for Druv - intelligence contract
 
-- [ ] Set `INTELLIGENCE_SERVICE_URL` and connect the tested `/forecast` service.
+- [x] Set `INTELLIGENCE_SERVICE_URL` and connect the tested `/forecast` and `/scenarios/simulate` services with a labelled Node fallback.
 - [ ] Validate the final risk, confidence, cause, stockout, regional-fragility, simulator, and optimizer response schemas.
 - [ ] Replace the fixture optimiser and scenario calculation with Druv's test-verified outputs while retaining backend input/error validation and timeouts.
 
@@ -40,18 +41,18 @@ Status as of this workspace setup: **the repository was empty, so all live data 
 
 ### Waiting for Samson - frontend contract/integration
 
-- [ ] Reconcile each endpoint with the dashboard, facility, candidates, simulator, plan review, and audit screen requirements.
-- [ ] Replace frontend mocks with live API calls and jointly test loading, error, and empty states.
+- [x] Reconcile the dashboard, facility, candidates, simulator, plan review, and audit API mapping with MySQL-compatible facility IDs and medicine units.
+- [x] Keep built-in mocks as an offline demo mode while live API mode calls the backend through one service layer.
 - [ ] Rehearse the five-click golden demo against the deployed API.
 
 ## Release responsibility
 
 - [ ] Fix integration defects only after every owner marks their handoff stable.
-- [ ] Production environment variables and stable public URL.
+- [x] Production-style environment variables, container configuration, and health checks.
+- [ ] Select a host, configure real environment secrets, and establish a stable public URL.
 - [ ] Fresh-clone verification: install, seed/reset, start, test, and complete the golden scenario without manual edits.
 - [ ] Release freeze, accessible README, and public repository/app checks.
 
 ## Scope guardrails
 
 Do not spend the prototype window on enterprise authentication, unnecessary microservices, real hospital integrations, unneeded admin screens, or deployment experiments after the release candidate stabilizes.
-
