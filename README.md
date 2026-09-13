@@ -42,7 +42,7 @@ For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE
 
 ## Vercel review deployment
 
-Vercel serves the React workspace and the Express fixture vertical slice from one deployment: the frontend calls its same-origin `/api` route, so dashboard, facility, candidate, simulation, plan approval, and audit flows work without hard-coded localhost URLs. It is intentionally fixture-only and its in-memory approval history resets on a cold serverless instance.
+The Vercel review demo uses two standard projects from this repository: deploy `backend/` first for the fixture API, then deploy `frontend/` with `VITE_API_BASE_URL` set to that API deployment's `/api` URL. This gives the public React UI real API calls without hard-coded localhost URLs. It is intentionally fixture-only and its in-memory approval history resets on a cold serverless instance.
 
 The MySQL-backed intelligence flow needs the Docker stack or another persistent Node/MySQL/FastAPI host. Do not label a Vercel fixture deployment as a production clinical system; it remains a simulated review demo.
 

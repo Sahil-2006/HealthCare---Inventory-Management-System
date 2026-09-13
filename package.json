@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @medripple/backend dev",
     "start": "pnpm --filter @medripple/backend start",
     "test": "pnpm --filter @medripple/backend test",
-    "check": "pnpm --filter @medripple/backend check && node --check \"api/[...path].js\"",
+    "check": "pnpm --filter @medripple/backend check && node --check \"backend/api/[...path].js\"",
     "dev:frontend": "pnpm --filter @medripple/frontend dev",
     "build:frontend": "pnpm --filter @medripple/frontend build",
     "preview:frontend": "pnpm --filter @medripple/frontend preview",

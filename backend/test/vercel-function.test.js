@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 
-const app = require('../../api/[...path]');
+const app = require('../api/[...path]');
 
 test('Vercel serverless wrapper serves the fixture API without external services', async (t) => {
   const server = app.listen(0, '127.0.0.1');
