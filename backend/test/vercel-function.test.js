@@ -9,10 +9,18 @@ test('Vercel serverless wrapper serves the fixture API without external services
   await new Promise((resolve) => server.once('listening', resolve));
   const { port } = server.address();
 
-  const response = await fetch(`http://127.0.0.1:${port}/api/region/summary`);
+  const login = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'demo.approver@medripple.demo', password: 'MedrippleDemo!2026' })
+  });
+  const loginPayload = await login.json();
+  const response = await fetch(`http://127.0.0.1:${port}/api/region/summary`, {
+    headers: { authorization: `Bearer ${loginPayload.data.token}` }
+  });
   const payload = await response.json();
 
   assert.equal(response.status, 200);
+  assert.equal(login.status, 200);
   assert.equal(payload.meta.source, 'FIXTURE_STORE');
   assert.equal(typeof payload.data.resilienceScore, 'number');
 });

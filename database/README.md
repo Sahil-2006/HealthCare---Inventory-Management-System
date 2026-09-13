@@ -22,7 +22,7 @@ To connect the backend, copy `.env.example` to `.env` and change:
 DATA_SOURCE=mysql
 ```
 
-Then run `pnpm dev`. `/health` should report `"dataSource": "MYSQL"`. The MySQL backend powers regional summary, facilities, medicines, inventory, scenario simulation, safe-plan generation, and plan approval/rejection audit persistence. Forecast remains a clearly labelled fallback until Druv's intelligence service is connected.
+Then run `pnpm dev`. `/health` should report `"dataSource": "MYSQL"`. The MySQL backend powers regional summary, facilities, medicines, inventory, scenario simulation, safe-plan generation, plan approval/rejection audit persistence, and durable application accounts. Forecast remains a clearly labelled fallback until Druv's intelligence service is connected. The seeded Demo Approver is only for synthetic-data review; rotate or remove it in any persistent team environment.
 
 ## Resetting the database
 

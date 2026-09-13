@@ -79,7 +79,6 @@ function validateDecision(body) {
   }
   return {
     decision: input.decision,
-    actor: requireString(input.actor, 'actor'),
     note: requireString(input.note, 'note')
   };
 }

@@ -7,6 +7,9 @@ const requestedQuantity = 45;
 let facilityCache = null;
 let planCache = null;
 let auditEvents = [...mockAudit];
+const sessionStorageKey = 'medripple.session';
+let accessToken = typeof window === 'undefined' ? '' : window.localStorage.getItem(sessionStorageKey) || '';
+const mockUser = { id: 'mock-operator', name: 'Demo Operator', email: 'demo.operator@medripple.demo', role: 'OPERATOR' };
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -61,12 +64,24 @@ function formatTime(timestamp) {
   return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-async function request(path, options = {}) {
+function clearSession() {
+  accessToken = '';
+  if (typeof window !== 'undefined') window.localStorage.removeItem(sessionStorageKey);
+}
+
+function saveSession(session) {
+  accessToken = session.token;
+  if (typeof window !== 'undefined') window.localStorage.setItem(sessionStorageKey, accessToken);
+  return session;
+}
+
+async function request(path, { skipAuth = false, headers: customHeaders = {}, ...options } = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...(accessToken && !skipAuth ? { Authorization: `Bearer ${accessToken}` } : {}), ...customHeaders },
   });
   const payload = await response.json().catch(() => null);
+  if (response.status === 401 && !skipAuth) clearSession();
   if (!response.ok) throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, response.status);
   return payload?.data;
 }
@@ -198,6 +213,36 @@ async function liveSimulation(horizon) {
 }
 
 export const medrippleApi = {
+  async restoreSession() {
+    if (useMocks) return mockUser;
+    if (!accessToken) return null;
+    try {
+      return (await request('/auth/me')).user;
+    } catch (error) {
+      if (error.status === 401) return null;
+      throw error;
+    }
+  },
+
+  async login({ email, password }) {
+    if (useMocks) return { user: { ...mockUser, email: email || mockUser.email }, token: 'mock-session' };
+    return saveSession(await request('/auth/login', { method: 'POST', skipAuth: true, body: JSON.stringify({ email, password }) }));
+  },
+
+  async register({ name, email, password }) {
+    if (useMocks) return { user: { ...mockUser, name: name || mockUser.name, email: email || mockUser.email }, token: 'mock-session' };
+    return saveSession(await request('/auth/signup', { method: 'POST', skipAuth: true, body: JSON.stringify({ name, email, password }) }));
+  },
+
+  async logout() {
+    if (!useMocks && accessToken) {
+      try { await request('/auth/logout', { method: 'POST' }); } catch { /* Local token removal is sufficient for this stateless session. */ }
+    }
+    clearSession();
+    facilityCache = null;
+    planCache = null;
+  },
+
   async getDashboard() {
     if (useMocks) { await pause(); return dashboard; }
     const [summary, rawFacilities] = await Promise.all([request('/region/summary'), getFacilities()]);
@@ -272,7 +317,7 @@ export const medrippleApi = {
       auditEvents = [event, ...auditEvents];
       return { ...plan, id: planId, status: decision, auditEvent: event };
     }
-    const response = await request(`/plans/${planId}/approve`, { method: 'POST', body: JSON.stringify({ decision: decision === 'approved' ? 'APPROVE' : 'REJECT', actor: 'regional-coordinator', note: note.trim() || 'Decision recorded in the MEDRIPPLE workspace.' }) });
+    const response = await request(`/plans/${planId}/approve`, { method: 'POST', body: JSON.stringify({ decision: decision === 'approved' ? 'APPROVE' : 'REJECT', note: note.trim() || 'Decision recorded in the MEDRIPPLE workspace.' }) });
     planCache = { ...response.plan, simulation: planCache?.simulation };
     return mapPlan(planCache, await getFacilities());
   },

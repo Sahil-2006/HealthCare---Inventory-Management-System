@@ -9,6 +9,7 @@ A prototype for making regional medicine shortages visible before they become em
 - Seeded MySQL schema, deterministic insulin golden scenario, and switchable fixture fallback
 - Source-aware simulator, constrained safe-plan generator, and human approve/reject audit persistence
 - FastAPI intelligence service for forecasting and ripple simulation, with a timeout-bound Node fallback
+- Sign-up/login, signed expiring sessions, and server-enforced operator/approver roles
 - Automated API tests and a GitHub Actions check
 
 ## Quick start
@@ -28,6 +29,11 @@ pnpm test
 pnpm check
 ```
 
+Open the frontend in a second terminal with `pnpm dev:frontend`. The seeded
+simulation approver is `demo.approver@medripple.demo` with password
+`MedrippleDemo!2026`. Public sign-up creates an `OPERATOR` account; only an
+organisation-assigned `APPROVER` or `ADMIN` can approve or reject a plan.
+
 ## Integrated local stack
 
 With Docker Desktop running, start the MySQL database and backend together:
@@ -40,11 +46,13 @@ Wait for the backend and intelligence health checks, then open `http://127.0.0.1
 
 For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE=mysql` in `.env`, and then run `pnpm dev`.
 
-## Vercel review deployment
+## Public prototype deployment
 
-The Vercel review demo uses two standard projects from this repository: deploy `backend/` first for the fixture API, then deploy `frontend/` with `VITE_API_BASE_URL` set to that API deployment's `/api` URL. The backend project deliberately uses a Vercel serverless catch-all rather than the development `listen()` entry point. This gives the public React UI real API calls without hard-coded localhost URLs. It is intentionally fixture-only and its in-memory approval history resets on a cold serverless instance. The checked-in production frontend configuration targets the current public fixture API deployment.
+The public Vercel prototype uses two standard projects from this repository: deploy `backend/` first for the fixture API, then deploy `frontend/` with `VITE_API_BASE_URL` set to that API deployment's `/api` URL. The backend project deliberately uses a Vercel serverless catch-all rather than the development `listen()` entry point. This gives the public React UI real authenticated API calls without hard-coded localhost URLs.
 
-The MySQL-backed intelligence flow needs the Docker stack or another persistent Node/MySQL/FastAPI host. Do not label a Vercel fixture deployment as a production clinical system; it remains a simulated review demo.
+Set a unique `AUTH_JWT_SECRET` in the backend Vercel project before deploying. The Vercel service intentionally uses deterministic fixture data, and new public registrations/approval history live only for a warm serverless instance. It is a public prototype, not a persistent clinical production system.
+
+The MySQL-backed intelligence flow and persistent accounts need the Docker stack or another persistent Node/MySQL/FastAPI host. See [docs/deployment.md](docs/deployment.md) for the production cutover checklist. Do not label the Vercel fixture deployment as a clinical system.
 
 ## Important prototype boundaries
 

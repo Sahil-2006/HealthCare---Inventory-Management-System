@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import './auth.css';
 import { Icon } from './components/Icon';
+import { AuthScreen } from './components/AuthScreen';
 import { medrippleApi } from './services/medrippleApi';
 
 const navigation = [
@@ -26,7 +28,8 @@ function EmptyOrError({ title, copy, onRetry }) {
   </section>;
 }
 
-function AppShell({ active, onNavigate, children, menuOpen, setMenuOpen, snapshotAt, dateLabel }) {
+function AppShell({ active, onNavigate, children, menuOpen, setMenuOpen, snapshotAt, dateLabel, user, onSignOut }) {
+  const initials = user?.name?.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'MR';
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? 'sidebar-open' : ''}`} aria-label="Primary navigation">
       <div className="brand">
@@ -43,7 +46,7 @@ function AppShell({ active, onNavigate, children, menuOpen, setMenuOpen, snapsho
       <div className="sidebar-spacer" />
       <div className="network-mini"><span className="status-light" />Network snapshot <small>8 facilities connected</small></div>
       <button className="guide-link"><span className="guide-mark">?</span>Workspace guide</button>
-      <div className="user-card"><div className="avatar">RC</div><div><strong>Regional coordinator</strong><span>Chennai region</span></div></div>
+      <div className="user-card"><div className="avatar">{initials}</div><div><strong>{user?.name || 'Workspace user'}</strong><span>{user?.role?.toLowerCase() || 'operator'} account</span></div><button className="sign-out" type="button" onClick={onSignOut} aria-label="Sign out"><Icon name="logout" size={16} /></button></div>
     </aside>
     {menuOpen && <button className="backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
     <main className="main-panel">
@@ -146,13 +149,13 @@ function Simulator({ data, onHorizon, busy, onNavigate }) {
   </>;
 }
 
-function PlanReview({ data, onDecision, decisionBusy, onNavigate }) {
+function PlanReview({ data, onDecision, decisionBusy, onNavigate, canApprove }) {
   const [note, setNote] = useState('');
   const isResolved = data.status === 'approved' || data.status === 'rejected';
   return <>
     <PageHeading eyebrow="PLAN REVIEW" title="Recommended transfer plan" copy={`${data.target} · ${data.medicine} · ${data.presentation}`} action={<RiskBadge tone={data.status === 'approved' ? 'healthy' : data.status === 'rejected' ? 'critical' : 'watch'}>{isResolved ? data.status : 'Awaiting human approval'}</RiskBadge>} />
     <section className="clinical-banner"><span><Icon name="shield" /></span><div><strong>Clinical verification check required</strong><p>{data.warning}</p></div></section>
-    <section className="plan-layout"><div className="plan-main"><div className="section-heading"><span>SAFE SOURCING ROUTE</span><h2>Instruction set</h2><p>{data.rationale}</p></div><div className="transfer-list">{data.transfers.map((transfer, index) => <article className="transfer-row" key={transfer.source}><div className="transfer-number">{index + 1}</div><div className="transfer-source"><small>SOURCE {index + 1}</small><h3>{transfer.source}</h3><p>Deliver {transfer.quantity} {data.unit} of {data.medicine}</p><span>{transfer.constraint}</span></div><div className="transfer-quantity"><strong>{transfer.quantity}</strong><span>{data.unit}</span><small>{transfer.distance}</small></div><div className="remaining-stock"><span>Remaining safe stock</span><strong>{transfer.remaining} {data.unit}</strong></div></article>)}</div></div><aside className="plan-summary"><h2>Execution summary</h2><dl><div><dt>Total sourced</dt><dd>{data.summary.total} {data.summary.unit}</dd></div><div><dt>New projected life</dt><dd className="good">{data.summary.projectedLife}</dd></div><div><dt>Uncertainty factor</dt><dd className="watch-text">{data.summary.uncertainty}</dd></div><div><dt>New stockouts</dt><dd className="good">{data.summary.noNewStockouts ? 'None projected' : 'Review required'}</dd></div></dl><div className="approval-note"><label htmlFor="approval-note">Approval note <small>optional</small></label><textarea id="approval-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add an operational note for the audit trail" disabled={isResolved} /></div>{isResolved ? <div className={`decision-result ${data.status}`}><Icon name={data.status === 'approved' ? 'check' : 'close'} /><div><strong>Plan {data.status}</strong><span>The decision was added to the immutable audit trail.</span></div></div> : <div className="decision-actions"><button className="button button-primary" disabled={decisionBusy} onClick={() => onDecision('approved', note)}>{decisionBusy ? 'Recording decision…' : 'Approve transfers'}<Icon name="check" /></button><button className="button button-danger" disabled={decisionBusy} onClick={() => onDecision('rejected', note)}>Reject & re-route</button></div>}<button className="audit-link" onClick={() => onNavigate('audit')}>View decision record <Icon name="arrow" /></button></aside></section>
+    <section className="plan-layout"><div className="plan-main"><div className="section-heading"><span>SAFE SOURCING ROUTE</span><h2>Instruction set</h2><p>{data.rationale}</p></div><div className="transfer-list">{data.transfers.map((transfer, index) => <article className="transfer-row" key={transfer.source}><div className="transfer-number">{index + 1}</div><div className="transfer-source"><small>SOURCE {index + 1}</small><h3>{transfer.source}</h3><p>Deliver {transfer.quantity} {data.unit} of {data.medicine}</p><span>{transfer.constraint}</span></div><div className="transfer-quantity"><strong>{transfer.quantity}</strong><span>{data.unit}</span><small>{transfer.distance}</small></div><div className="remaining-stock"><span>Remaining safe stock</span><strong>{transfer.remaining} {data.unit}</strong></div></article>)}</div></div><aside className="plan-summary"><h2>Execution summary</h2><dl><div><dt>Total sourced</dt><dd>{data.summary.total} {data.summary.unit}</dd></div><div><dt>New projected life</dt><dd className="good">{data.summary.projectedLife}</dd></div><div><dt>Uncertainty factor</dt><dd className="watch-text">{data.summary.uncertainty}</dd></div><div><dt>New stockouts</dt><dd className="good">{data.summary.noNewStockouts ? 'None projected' : 'Review required'}</dd></div></dl><div className="approval-note"><label htmlFor="approval-note">Approval note <small>optional</small></label><textarea id="approval-note" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add an operational note for the audit trail" disabled={isResolved || !canApprove} /></div>{isResolved ? <div className={`decision-result ${data.status}`}><Icon name={data.status === 'approved' ? 'check' : 'close'} /><div><strong>Plan {data.status}</strong><span>The decision was added to the immutable audit trail.</span></div></div> : !canApprove ? <div className="role-notice"><Icon name="shield" /><div><strong>Approver role required</strong><span>Operator accounts can review plans but cannot approve or reject them.</span></div></div> : <div className="decision-actions"><button className="button button-primary" disabled={decisionBusy} onClick={() => onDecision('approved', note)}>{decisionBusy ? 'Recording decision…' : 'Approve transfers'}<Icon name="check" /></button><button className="button button-danger" disabled={decisionBusy} onClick={() => onDecision('rejected', note)}>Reject & re-route</button></div>}<button className="audit-link" onClick={() => onNavigate('audit')}>View decision record <Icon name="arrow" /></button></aside></section>
   </>;
 }
 
@@ -167,7 +170,9 @@ function AuditTrail({ rows }) {
 function App() {
   const [view, setView] = useState('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState(null);
   const [error, setError] = useState('');
   const [payload, setPayload] = useState({});
   const [simulationBusy, setSimulationBusy] = useState(false);
@@ -184,8 +189,32 @@ function App() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let active = true;
+    medrippleApi.restoreSession()
+      .then((sessionUser) => { if (active) setUser(sessionUser); })
+      .catch(() => { if (active) setUser(null); })
+      .finally(() => { if (active) setAuthReady(true); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => { if (user) load(); }, [user]);
   useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(''), 3600); return () => window.clearTimeout(timer); }, [toast]);
+
+  const onAuthenticated = (sessionUser) => {
+    setView('dashboard');
+    setPayload({});
+    setError('');
+    setLoading(true);
+    setUser(sessionUser);
+  };
+
+  const onSignOut = async () => {
+    await medrippleApi.logout();
+    setUser(null);
+    setPayload({});
+    setError('');
+    setToast('');
+  };
 
   const onHorizon = async (horizon) => {
     if (horizon === payload.simulation?.horizon) return;
@@ -214,15 +243,16 @@ function App() {
     if (view === 'facility') return <FacilityDetail data={payload.facility} onNavigate={setView} />;
     if (view === 'candidates') return <Candidates data={payload.candidates} onNavigate={setView} />;
     if (view === 'simulator') return <Simulator data={payload.simulation} onHorizon={onHorizon} busy={simulationBusy} onNavigate={setView} />;
-    if (view === 'plan') return <PlanReview data={payload.plan} onDecision={onDecision} decisionBusy={decisionBusy} onNavigate={setView} />;
+    if (view === 'plan') return <PlanReview data={payload.plan} onDecision={onDecision} decisionBusy={decisionBusy} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
     if (view === 'audit') return <AuditTrail rows={payload.audit} />;
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;
-  }, [view, payload, simulationBusy, decisionBusy]);
+  }, [view, payload, simulationBusy, decisionBusy, user]);
 
-  if (loading) return <div className="initial-state"><div className="loading-logo"><Icon name="ripple" size={28} /></div><strong>Loading MEDRIPPLE</strong><span>Preparing your regional resilience snapshot…</span></div>;
+  if (!authReady || loading) return <div className="initial-state"><div className="loading-logo"><Icon name="ripple" size={28} /></div><strong>Loading MEDRIPPLE</strong><span>Preparing your regional resilience snapshot…</span></div>;
+  if (!user) return <AuthScreen api={medrippleApi} onAuthenticate={onAuthenticated} />;
   if (error) return <div className="error-page"><EmptyOrError title="Regional workspace unavailable" copy={error} onRetry={load} /></div>;
 
-  return <><AppShell active={view} onNavigate={setView} menuOpen={menuOpen} setMenuOpen={setMenuOpen} snapshotAt={payload.dashboard?.snapshotAt} dateLabel={payload.dashboard?.dateLabel}>{content}</AppShell>{toast && <div className="toast" role="status"><Icon name="check" />{toast}<button aria-label="Dismiss" onClick={() => setToast('')}><Icon name="close" size={16} /></button></div>}</>;
+  return <><AppShell active={view} onNavigate={setView} menuOpen={menuOpen} setMenuOpen={setMenuOpen} snapshotAt={payload.dashboard?.snapshotAt} dateLabel={payload.dashboard?.dateLabel} user={user} onSignOut={onSignOut}>{content}</AppShell>{toast && <div className="toast" role="status"><Icon name="check" />{toast}<button aria-label="Dismiss" onClick={() => setToast('')}><Icon name="close" size={16} /></button></div>}</>;
 }
 
 export default App;

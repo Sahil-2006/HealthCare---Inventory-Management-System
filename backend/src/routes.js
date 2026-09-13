@@ -1,5 +1,6 @@
 const express = require('express');
 const { AppError, asyncHandler } = require('./errors');
+const { publicUser, requireAuthentication, requireRole } = require('./auth');
 const { validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision } = require('./validation');
 const { simulateScenario, optimisePlan } = require('./scenario-service');
 const { createPlanStore } = require('./plan-store');
@@ -8,11 +9,35 @@ function success(response, data, meta = {}) {
   response.json({ data, meta: { ...meta, requestId: response.locals.requestId } });
 }
 
-function createApiRouter({ intelligenceAdapter, inventoryStore }) {
+function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   const router = express.Router();
   const planStore = createPlanStore();
   const runScenario = async (input) => (await intelligenceAdapter.simulate(input))
     || simulateScenario(input, inventoryStore);
+
+  router.post('/auth/signup', asyncHandler(async (request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    success(response, await authService.register(request.body), { authentication: true });
+  }));
+
+  router.post('/auth/login', asyncHandler(async (request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    success(response, await authService.login(request.body), { authentication: true });
+  }));
+
+  router.get('/auth/me', requireAuthentication(authService), (request, response) => {
+    response.setHeader('Cache-Control', 'no-store');
+    success(response, { user: publicUser(request.user) }, { authentication: true });
+  });
+
+  router.post('/auth/logout', requireAuthentication(authService), (request, response) => {
+    // JWT sessions are stateless. The client removes its token; expiry bounds
+    // any copied token without keeping a server-side session table.
+    response.setHeader('Cache-Control', 'no-store');
+    success(response, { loggedOut: true }, { authentication: true });
+  });
+
+  router.use(requireAuthentication(authService));
 
   router.get('/region/summary', asyncHandler(async (request, response) => {
     const facilities = await inventoryStore.listFacilities();
@@ -86,9 +111,10 @@ function createApiRouter({ intelligenceAdapter, inventoryStore }) {
     success(response, plan, { source: inventoryStore.source });
   });
 
-  router.post('/plans/:planId/approve', asyncHandler(async (request, response) => {
+  router.post('/plans/:planId/approve', requireRole('APPROVER', 'ADMIN'), asyncHandler(async (request, response) => {
     const decision = validateDecision(request.body);
-    const result = await planStore.decide(request.params.planId, decision, inventoryStore);
+    const actor = `${request.user.name} <${request.user.email}>`;
+    const result = await planStore.decide(request.params.planId, { ...decision, actor }, inventoryStore);
     success(response, result, { source: inventoryStore.source, decisionSupportOnly: true });
   }));
 

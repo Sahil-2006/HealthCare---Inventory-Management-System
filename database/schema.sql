@@ -15,6 +15,7 @@ USE medripple;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS audit_events;
+DROP TABLE IF EXISTS app_users;
 DROP TABLE IF EXISTS transfers;
 DROP TABLE IF EXISTS routes;
 DROP TABLE IF EXISTS replenishments;
@@ -175,6 +176,22 @@ CREATE TABLE audit_events (
     before_state_json    JSON,
     after_state_json     JSON,
     event_timestamp      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------------
+-- APPLICATION USERS
+-- Public registration creates an OPERATOR account. Approval authority is
+-- deliberately assigned outside registration after organisational checks.
+-- ---------------------------------------------------------------------
+CREATE TABLE app_users (
+    user_id              CHAR(36) PRIMARY KEY,
+    full_name            VARCHAR(120) NOT NULL,
+    email                VARCHAR(254) NOT NULL UNIQUE,
+    password_hash        VARCHAR(255) NOT NULL,
+    role                 ENUM('VIEWER','OPERATOR','APPROVER','ADMIN') NOT NULL DEFAULT 'OPERATOR',
+    is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at        TIMESTAMP NULL
 );
 
 -- ---------------------------------------------------------------------
@@ -837,6 +854,18 @@ DROP TEMPORARY TABLE IF EXISTS sim_digits;
 
 COMMIT;
 
+-- Seeded solely for the simulated demo. Change or remove this account before
+-- using a persistent deployment with any non-simulated data.
+INSERT INTO app_users (user_id, full_name, email, password_hash, role, is_active)
+VALUES (
+    'demo-approver-001',
+    'Demo Approver',
+    'demo.approver@medripple.demo',
+    'scrypt$bWVkcmlwcGxlLWRlbW8tMjAyNg$tiwYmJXvsZUqJ4T9pnhprY4Ky8wHIZ4hATpeymIHCdukfMIkblAFGoZtE1gZTgPBnURTS4Apl6fHNe3NVI_XjQ',
+    'APPROVER',
+    TRUE
+);
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 START TRANSACTION;
@@ -1217,6 +1246,9 @@ COMMIT;
 
 SELECT 'audit_events' AS table_name, FORMAT(COUNT(*), 0) AS row_count
 FROM audit_events
+
+UNION ALL
+SELECT 'app_users', FORMAT(COUNT(*), 0) FROM app_users
 
 UNION ALL
 SELECT 'batches', FORMAT(COUNT(*), 0) FROM batches

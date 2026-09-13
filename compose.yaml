@@ -11,6 +11,7 @@ services:
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./database/migrations/002_add_human_rejected_transfer_status.sql:/docker-entrypoint-initdb.d/02-add-rejected-status.sql:ro
       - ./database/golden-scenario.sql:/docker-entrypoint-initdb.d/03-golden-scenario.sql:ro
+      - ./database/migrations/003_add_application_users.sql:/docker-entrypoint-initdb.d/04-add-application-users.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_dev_only"]
       interval: 5s
@@ -58,6 +59,8 @@ services:
       SIMULATION_DATE: 2026-09-11
       INTELLIGENCE_SERVICE_URL: http://intelligence:8000
       CORS_ORIGINS: http://localhost:5173
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-medripple-local-only-not-for-deployment-secret-2026}
+      AUTH_TOKEN_TTL_MINUTES: 480
     depends_on:
       mysql:
         condition: service_healthy

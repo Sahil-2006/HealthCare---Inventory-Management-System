@@ -28,7 +28,11 @@ function createConfig(environment = process.env) {
     simulationDate: environment.SIMULATION_DATE || '2026-09-11',
     corsOrigins: originList,
     intelligenceServiceUrl: (environment.INTELLIGENCE_SERVICE_URL || '').replace(/\/$/, ''),
-    intelligenceTimeoutMs: readInteger(environment.INTELLIGENCE_TIMEOUT_MS, 2500)
+    intelligenceTimeoutMs: readInteger(environment.INTELLIGENCE_TIMEOUT_MS, 2500),
+    // A supplied secret is mandatory for a deployed service. The development
+    // fallback only keeps local fixture work simple; it must never be reused.
+    authJwtSecret: environment.AUTH_JWT_SECRET || (environment.NODE_ENV === 'production' ? '' : 'medripple-local-development-secret-change-before-deployment'),
+    authTokenTtlMinutes: readInteger(environment.AUTH_TOKEN_TTL_MINUTES, 8 * 60)
   };
 }
 

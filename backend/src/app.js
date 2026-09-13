@@ -3,15 +3,30 @@ const cors = require('cors');
 const express = require('express');
 const { createApiRouter } = require('./routes');
 const { AppError, asyncHandler } = require('./errors');
+const { createAuthService } = require('./auth');
+const { createAuthStore } = require('./auth-store');
 const { createIntelligenceAdapter } = require('./intelligence-adapter');
 const { createInventoryStore } = require('./inventory-store');
 
 function createApp(config) {
   const app = express();
+  const authConfig = {
+    ...config,
+    authJwtSecret: config.authJwtSecret || (config.environment === 'production' ? '' : 'medripple-local-development-secret-change-before-deployment'),
+    authTokenTtlMinutes: config.authTokenTtlMinutes || 8 * 60
+  };
   const allowedOrigins = new Set(config.corsOrigins);
   const inventoryStore = createInventoryStore(config);
+  const authStore = createAuthStore(config);
+  const authService = createAuthService(authConfig, authStore);
 
   app.disable('x-powered-by');
+  app.use((request, response, next) => {
+    response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('X-Frame-Options', 'DENY');
+    next();
+  });
   app.use((request, response, next) => {
     response.locals.requestId = request.get('x-request-id') || crypto.randomUUID();
     response.setHeader('x-request-id', response.locals.requestId);
@@ -39,7 +54,12 @@ function createApp(config) {
       meta: { requestId: response.locals.requestId }
     });
   }));
-  app.use('/api', createApiRouter({ intelligenceAdapter: createIntelligenceAdapter(config, inventoryStore), inventoryStore }));
+  app.use('/api', createApiRouter({
+    authService,
+    config,
+    intelligenceAdapter: createIntelligenceAdapter(config, inventoryStore),
+    inventoryStore
+  }));
   app.use((request, response, next) => next(new AppError(404, 'NOT_FOUND', 'The requested route does not exist.')));
   app.use((error, request, response, next) => {
     const knownError = error instanceof AppError;

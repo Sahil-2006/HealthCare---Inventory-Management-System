@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { after, before, beforeEach, test } = require('node:test');
 const { createApp } = require('../src/app');
 const { resetFixtureState } = require('../src/fixture-store');
+const { resetFixtureAuthState } = require('../src/auth-store');
 
 let server;
 let baseUrl;
@@ -13,7 +14,18 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
-beforeEach(() => resetFixtureState());
+let approverHeaders;
+
+beforeEach(async () => {
+  resetFixtureState();
+  resetFixtureAuthState();
+  const login = await request('/api/auth/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'demo.approver@medripple.demo', password: 'MedrippleDemo!2026' })
+  });
+  assert.equal(login.response.status, 200);
+  approverHeaders = { authorization: `Bearer ${login.body.data.token}` };
+});
 after(() => server.close());
 
 async function request(path, options) {
@@ -29,7 +41,7 @@ test('health endpoint identifies the running backend', async () => {
 });
 
 test('inventory excludes expired stock from effective stock', async () => {
-  const { response, body } = await request('/api/facilities/facility-navjeevan-phc/inventory');
+  const { response, body } = await request('/api/facilities/facility-navjeevan-phc/inventory', { headers: approverHeaders });
   assert.equal(response.status, 200);
   assert.equal(body.data.recordedStock, 27);
   assert.equal(body.data.effectiveStock, 22);
@@ -38,7 +50,7 @@ test('inventory excludes expired stock from effective stock', async () => {
 
 test('fixture forecast is explicitly labelled as a fallback', async () => {
   const { response, body } = await request('/api/forecast', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
     body: JSON.stringify({ facilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', horizonDays: 14 })
   });
   assert.equal(response.status, 200);
@@ -48,7 +60,7 @@ test('fixture forecast is explicitly labelled as a fallback', async () => {
 
 test('simulator rejects a transfer that drains a donor below protected safety stock', async () => {
   const { response, body } = await request('/api/scenarios/simulate', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
     body: JSON.stringify({
       horizonDays: 14,
       transfers: [{ fromFacilityId: 'facility-district-hospital', toFacilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', quantity: 45, arrivalDay: 1 }]
@@ -61,22 +73,22 @@ test('simulator rejects a transfer that drains a donor below protected safety st
 
 test('safe plan can be approved and creates an audit record', async () => {
   const planResponse = await request('/api/plans/optimize', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
     body: JSON.stringify({ destinationFacilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', quantity: 45, horizonDays: 14 })
   });
   assert.equal(planResponse.response.status, 200);
   assert.equal(planResponse.body.data.simulation.comparison.safeToRecommend, true);
 
   const approval = await request(`/api/plans/${planResponse.body.data.id}/approve`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ decision: 'APPROVE', actor: 'demo-user', note: 'Reviewed simulated protected-stock impact.' })
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
+    body: JSON.stringify({ decision: 'APPROVE', note: 'Reviewed simulated protected-stock impact.' })
   });
   assert.equal(approval.response.status, 200);
   assert.equal(approval.body.data.plan.status, 'APPROVED');
   assert.equal(approval.body.data.audit.action, 'PLAN_APPROVED');
   assert.equal(approval.body.data.persistence.storage, 'MEMORY');
 
-  const audit = await request('/api/audit');
+  const audit = await request('/api/audit', { headers: approverHeaders });
   assert.equal(audit.response.status, 200);
   assert.equal(audit.body.data.length, 1);
   assert.equal(audit.body.data[0].action, 'PLAN_APPROVED');
@@ -84,9 +96,29 @@ test('safe plan can be approved and creates an audit record', async () => {
 
 test('invalid requests use the documented error envelope', async () => {
   const { response, body } = await request('/api/forecast', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({})
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders }, body: JSON.stringify({})
   });
   assert.equal(response.status, 400);
   assert.equal(body.error.code, 'INVALID_REQUEST');
   assert.ok(body.meta.requestId);
+});
+
+test('registration signs in an operator but does not grant approval authority', async () => {
+  const registered = await request('/api/auth/signup', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Sahil Test', email: 'sahil.test@example.com', password: 'StrongPass2026' })
+  });
+  assert.equal(registered.response.status, 200);
+  assert.equal(registered.body.data.user.role, 'OPERATOR');
+
+  const planResponse = await request('/api/plans/optimize', {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${registered.body.data.token}` },
+    body: JSON.stringify({ destinationFacilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', quantity: 45, horizonDays: 14 })
+  });
+  const denied = await request(`/api/plans/${planResponse.body.data.id}/approve`, {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${registered.body.data.token}` },
+    body: JSON.stringify({ decision: 'APPROVE', note: 'Trying to approve.' })
+  });
+  assert.equal(denied.response.status, 403);
+  assert.equal(denied.body.error.code, 'INSUFFICIENT_ROLE');
 });
