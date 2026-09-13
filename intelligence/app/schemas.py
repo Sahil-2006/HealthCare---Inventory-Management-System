@@ -10,6 +10,7 @@ Quantities are in the medicine's unit (forecast.unit) and keep their decimals.
 
 import datetime as dt
 import math
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -449,6 +450,212 @@ class SimulationResponse(ApiModel):
     data_context: SimulationDataContextBlock
     data_label: str
     model_version: str
+
+
+QUANTITY_SCALE = 100
+# DECIMAL(12,2): at most 10 digits before the decimal point and 2 after.
+MAX_PLAN_QUANTITY = Decimal("9999999999.99")
+
+SolverStatus = Literal["OPTIMAL", "FEASIBLE", "INFEASIBLE", "VALIDATION_FAILED"]
+StageStatus = Literal["OPTIMAL", "FEASIBLE"]
+CandidateStatus = Literal["SELECTED", "ELIGIBLE_NOT_SELECTED", "REJECTED"]
+
+
+class OptimizeRequest(BaseModel):
+    """A redistribution request, in the shape backend/src/validation.js accepts for POST /api/plans/optimize."""
+
+    model_config = ConfigDict(alias_generator=to_camel, str_strip_whitespace=True)
+
+    destination_facility_id: str = Field(min_length=1, examples=["PHC-VLR-001"])
+    medicine_id: str = Field(min_length=1, examples=["7"])
+    quantity: float = Field(description="Requested quantity in the medicine's unit, with at most 2 decimals.", examples=[300])
+    horizon_days: int = Field(default=14, description="Planning horizon in days: 7, 14 or 30.", examples=[14])
+
+    @field_validator("quantity", mode="before")
+    @classmethod
+    def check_quantity(cls, value: Any) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError("quantity must be a positive number")
+        exact = Decimal(str(value))
+        if exact > MAX_PLAN_QUANTITY:
+            raise ValueError(f"quantity must not exceed {MAX_PLAN_QUANTITY}")
+        if exact != exact.quantize(Decimal("0.01")):
+            # Quantities are solved in hundredths; a finer quantity would have to be rounded, so it is refused instead.
+            raise ValueError("quantity must have at most 2 decimal places")
+        return float(value)
+
+    @field_validator("horizon_days", mode="before")
+    @classmethod
+    def check_horizon(cls, value: Any) -> int:
+        return _check_horizon(value)
+
+
+class ObjectiveTermBlock(ApiModel):
+    name: str
+    weight: int
+    description: str
+
+
+class ObjectiveStageBlock(ApiModel):
+    priority: int = Field(description="Stages are optimised in order; each stage's optimum is fixed before the next.")
+    name: str
+    value: int
+    status: StageStatus
+    terms: list[ObjectiveTermBlock]
+
+
+class SolverBlock(ApiModel):
+    name: str
+    algorithm: str
+    version: str
+    status: SolverStatus = Field(description="OPTIMAL or FEASIBLE for a validated plan.")
+    quantity_scale: int = Field(description="Quantities are passed to the integer solver as hundredths of the unit.")
+    objective_value: int = Field(description="Value of the first (recipient shortage) stage, in scaled units.")
+    objective_stages: list[ObjectiveStageBlock]
+    attempts: int = Field(description="Solver runs, including runs whose plan failed simulator validation.")
+    hard_constraints: list[str]
+
+
+class PlanTransferBlock(ApiModel):
+    from_facility_id: str
+    from_facility_name: str
+    to_facility_id: str
+    to_facility_name: str
+    medicine_id: str
+    batch_id: int | str | None = Field(description="Database batches.batch_id; the fixture uses the batch number, as the Node fixture does.")
+    batch_no: str
+    expiry_date: dt.date
+    quantity: float
+    unit: str
+    departure_day: int
+    arrival_day: int
+    arrival_date: dt.date
+    distance_km: float
+    travel_hours: float
+    cold_chain_available: bool
+
+
+class CandidateBlock(ApiModel):
+    facility_id: str
+    facility_name: str
+    facility_type: str
+    status: CandidateStatus
+    rejection_codes: list[str]
+    rejection_reasons: list[str]
+    effective_stock: float
+    predicted_daily_demand: float | None
+    demand_basis: DemandBasis
+    protected_stock: float | None
+    equity_uplift: float | None = Field(description="Extra share of protected stock a donor keeps (provisional equity rule).")
+    equity_reserve: float | None
+    operational_reserve: float | None = Field(description="Storage facilities only: share of effective stock kept for regional supply.")
+    retained_floor: float | None = Field(description="Stock the donor must keep on every day from departure to the end of the horizon.")
+    lasting_batch_quantity: float = Field(description="Usable stock in batches that stay in date until the end of the horizon.")
+    safe_capacity: float
+    allocated_quantity: float
+    baseline_risk_score: int | None
+    baseline_risk_label: RiskLabel | None
+    earliest_arrival_day: int | None
+    distance_km: float | None
+    travel_hours: float | None
+    explanation: str
+
+
+class EquityGuardrailBlock(ApiModel):
+    formula: str
+    remoteness_weight: float
+    facility_type_uplift: dict[str, float]
+    default_type_uplift: float
+    warehouse_operational_reserve_share: float
+    excluded_donor_risk_labels: list[str]
+    status: Literal["PROVISIONAL"]
+    review_owner: str
+
+
+class ValidationCheckBlock(ApiModel):
+    name: str
+    passed: bool
+    detail: str
+
+
+class PlanValidationBlock(ApiModel):
+    validator: str
+    passed: bool
+    checks: list[ValidationCheckBlock]
+
+
+class RecipientPlanBlock(ApiModel):
+    facility_id: str
+    facility_name: str
+    effective_stock: float
+    predicted_daily_demand: float | None
+    protected_stock: float | None
+    stockout_day_before: int | None
+    stockout_day_after: int | None
+    shortage_days_before: int
+    shortage_days_after: int
+    unmet_demand_before: float
+    unmet_demand_after: float
+    stockout_prevented: bool
+    quantity_to_avoid_shortage: float | None = Field(
+        description="Smallest quantity arriving on day 1 that removes the projected shortage; null when none arriving on day 1 can."
+    )
+
+
+class PlanResponse(ApiModel):
+    id: str = Field(description="Deterministic: the same request and data always give the same plan ID.")
+    status: Literal["PROPOSED"]
+    medicine: SimulationMedicineBlock
+    destination_facility_id: str
+    destination_facility_name: str
+    requested_quantity: float
+    allocated_quantity: float
+    unit: str
+    horizon_days: int
+    solver: SolverBlock
+    transfers: list[PlanTransferBlock]
+    recipient: RecipientPlanBlock
+    candidates: list[CandidateBlock]
+    equity_guardrail: EquityGuardrailBlock
+    rationale: str
+    validation: PlanValidationBlock
+    assumptions: list[str]
+    limitations: list[str]
+    simulation: SimulationResponse = Field(description="The Ripple Simulator's evaluation of the complete plan.")
+    decision_support_only: Literal[True] = True
+    requires_human_approval: Literal[True] = True
+    data_context: SimulationDataContextBlock
+    data_label: str
+    model_version: str
+
+
+class NoSafePlanDetailsBlock(ApiModel):
+    requested_quantity: float
+    safe_capacity: float = Field(description="Largest quantity eligible donors could send safely, summed over donors.")
+    unmet_quantity: float
+    unit: str
+    medicine_id: str
+    destination_facility_id: str
+    horizon_days: int
+    solver_status: Literal["INFEASIBLE", "VALIDATION_FAILED"]
+    attempts: int
+    candidates_considered: int
+    eligible_candidates: list[CandidateBlock]
+    rejected_candidates: list[CandidateBlock]
+    recommended_escalation: list[str]
+    explanation: str
+    decision_support_only: Literal[True] = True
+    data_context: SimulationDataContextBlock
+
+
+class NoSafePlanErrorBody(BaseModel):
+    code: Literal["NO_SAFE_PLAN"]
+    message: str
+    details: NoSafePlanDetailsBlock
+
+
+class NoSafePlanErrorResponse(BaseModel):
+    error: NoSafePlanErrorBody
 
 
 class HealthResponse(BaseModel):
