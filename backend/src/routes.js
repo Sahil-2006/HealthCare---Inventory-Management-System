@@ -11,6 +11,8 @@ function success(response, data, meta = {}) {
 function createApiRouter({ intelligenceAdapter, inventoryStore }) {
   const router = express.Router();
   const planStore = createPlanStore();
+  const runScenario = async (input) => (await intelligenceAdapter.simulate(input))
+    || simulateScenario(input, inventoryStore);
 
   router.get('/region/summary', asyncHandler(async (request, response) => {
     const facilities = await inventoryStore.listFacilities();
@@ -61,13 +63,21 @@ function createApiRouter({ intelligenceAdapter, inventoryStore }) {
 
   router.post('/scenarios/simulate', asyncHandler(async (request, response) => {
     const input = validateTransfers(request.body);
-    success(response, await simulateScenario(input, inventoryStore), { source: inventoryStore.source });
+    const scenario = await runScenario(input);
+    success(response, scenario, {
+      source: scenario.source || inventoryStore.source,
+      fallback: scenario.source !== 'INTELLIGENCE_SERVICE'
+    });
   }));
 
   router.post('/plans/optimize', asyncHandler(async (request, response) => {
     const input = validateOptimizeRequest(request.body);
-    const plan = await optimisePlan(input, inventoryStore, planStore);
-    success(response, plan, { source: inventoryStore.source, decisionSupportOnly: true });
+    const plan = await optimisePlan(input, inventoryStore, planStore, runScenario);
+    success(response, plan, {
+      source: plan.simulation?.source || inventoryStore.source,
+      fallback: plan.simulation?.source !== 'INTELLIGENCE_SERVICE',
+      decisionSupportOnly: true
+    });
   }));
 
   router.get('/plans/:planId', (request, response) => {

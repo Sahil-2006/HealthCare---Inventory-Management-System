@@ -1,6 +1,6 @@
 # Sahil's work board - Software Engineer & Integration Lead
 
-Status: backend foundation, MySQL integration, deterministic golden scenario, simulation/optimization, audit persistence, and local container stack are complete. Live intelligence, frontend, final clinical rules, external deployment, and final acceptance still depend on their owners.
+Status: backend foundation, MySQL integration, deterministic golden scenario, simulation/optimization, audit persistence, FastAPI forecast/ripple integration, frontend integration mapping, and local container stack are complete. Final clinical rules, public API hosting, and final acceptance still need their owners.
 
 ## Completed now
 
@@ -29,7 +29,7 @@ Status: backend foundation, MySQL integration, deterministic golden scenario, si
 
 ### Waiting for Druv - intelligence contract
 
-- [ ] Set `INTELLIGENCE_SERVICE_URL` and connect the tested `/forecast` service.
+- [x] Set `INTELLIGENCE_SERVICE_URL` and connect the tested `/forecast` and `/scenarios/simulate` services with a labelled Node fallback.
 - [ ] Validate the final risk, confidence, cause, stockout, regional-fragility, simulator, and optimizer response schemas.
 - [ ] Replace the fixture optimiser and scenario calculation with Druv's test-verified outputs while retaining backend input/error validation and timeouts.
 
@@ -41,8 +41,8 @@ Status: backend foundation, MySQL integration, deterministic golden scenario, si
 
 ### Waiting for Samson - frontend contract/integration
 
-- [ ] Reconcile each endpoint with the dashboard, facility, candidates, simulator, plan review, and audit screen requirements.
-- [ ] Replace frontend mocks with live API calls and jointly test loading, error, and empty states.
+- [x] Reconcile the dashboard, facility, candidates, simulator, plan review, and audit API mapping with MySQL-compatible facility IDs and medicine units.
+- [x] Keep built-in mocks as an offline demo mode while live API mode calls the backend through one service layer.
 - [ ] Rehearse the five-click golden demo against the deployed API.
 
 ## Release responsibility

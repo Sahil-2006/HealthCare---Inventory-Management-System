@@ -26,7 +26,7 @@ Every failure is shaped as:
 
 `source` is important: `FIXTURE_*` means deterministic simulated data; `DATABASE_FALLBACK` means the active MySQL records were used while the intelligence service was unavailable; `INTELLIGENCE_SERVICE` means Druv's live service answered. Any fallback forecast is usable for integration only, not a release result.
 
-When `DATA_SOURCE=mysql`, inventory, simulation, optimization, approval, and audit routes use Dhiren's seeded MySQL database and return `source: "MYSQL"`. Facility IDs are then stable database `facility_code` values such as `PHC-VLR-001`; medicine IDs are the database medicine IDs, while the fixture alias `med-insulin-100iu-vial` remains accepted for the default insulin view.
+When `DATA_SOURCE=mysql`, inventory, optimization, approval, and audit routes use Dhiren's seeded MySQL database. When `INTELLIGENCE_SERVICE_URL` is set, `/forecast`, `/scenarios/simulate`, and the simulation within `/plans/optimize` use the FastAPI intelligence service and return `source: "INTELLIGENCE_SERVICE"`; an unavailable service falls back to the Node simulator and returns `fallback: true`. Facility IDs are then stable database `facility_code` values such as `PHC-VLR-001`; medicine IDs are the database medicine IDs, while the fixture alias `med-insulin-100iu-vial` remains accepted for the default insulin view.
 
 ## Routes
 

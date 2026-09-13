@@ -447,19 +447,11 @@ The MySQL seed (10 facilities, 12 medicines, 75 days of consumption) is now read
 - Final `analyse_shortage` input field names aligned with the database columns
 - Team confirmation of the provisional mappings in [How database fields are interpreted](#how-database-fields-are-interpreted)
 
-## Backend changes requested
+## Node backend integration
 
-These are outside `intelligence/` and have not been made here:
+The Express API now proxies `/forecast` and `/scenarios/simulate` to this service when `INTELLIGENCE_SERVICE_URL` is configured. It passes deliberate 4xx intelligence errors through to callers and uses its own simulator only when the service times out or is unavailable. `optimisePlan` keeps its database-selected `batchId` for approval persistence, then evaluates the selected transfers through this service when available.
 
-- `backend/src/intelligence-adapter.js` turns every non-2xx response from this service into a fallback with `fallbackReason: INTELLIGENCE_UNAVAILABLE`. A deliberate answer such as 422 `NO_CONSUMPTION_HISTORY` for `WH-TN-001` is therefore shown as a zero-demand `DATABASE_FALLBACK`. It should pass 4xx error codes through, or at least record them as the fallback reason.
-- `backend/src/mysql-store.js` returns DATE columns as local-midnight JavaScript dates, so `expectedArrivalDate` 2026-09-19 is serialised as `2026-09-18T18:30:00.000Z` on an IST machine. Adding `dateStrings: ['DATE']` to the pool options returns plain `YYYY-MM-DD` strings.
-- `compose.yaml` sets `INTELLIGENCE_SERVICE_URL` to an empty string, so the containerised stack never calls this service.
-- To use the Ripple Simulator from Node, `backend/src/scenario-service.js` `simulateScenario` (called by `/api/scenarios/simulate` and by `optimisePlan`) would call `POST /scenarios/simulate` through the intelligence adapter, with its current logic as the labelled fallback. The request shape already matches. Response differences to adapt:
-  - Node facilities report `dailyDemand`, `endingStock` as `effectiveStock`, and `patientDaysAtRisk`; Python reports `predictedDailyDemand`, `effectiveStock` (snapshot), `endingStock` and `unmetDemand`.
-  - Node counts any facility with a stockout as critical; Python's `criticalFacilityCount` counts CRITICAL risk labels and adds `stockoutFacilityCount`.
-  - Node applies only eligible transfers; Python also simulates transfers that fail impact checks, so the harm is visible, and marks them `applied: true, eligible: false`.
-  - `backend/src/validation.js` accepts a non-integer or missing `arrivalDay` as 1 and flags `arrivalDay < 1` per transfer; Python rejects such requests with 422.
-  - `optimisePlan` needs `batchId` for persistence; Python returns `batches[].batchNo`, and the database batch ID would have to be looked up.
+`compose.yaml` runs MySQL, this service, and the Node backend together. It sets `INTELLIGENCE_SERVICE_URL=http://intelligence:8000`; backend MySQL DATE values are deliberately returned as `YYYY-MM-DD` strings so timezone conversion cannot alter a replenishment date.
 
 ## Layout
 

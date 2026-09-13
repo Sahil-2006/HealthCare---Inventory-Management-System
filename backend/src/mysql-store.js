@@ -64,7 +64,8 @@ function createPoolOptions(config) {
     password: config.databasePassword,
     waitForConnections: true,
     connectionLimit: 10,
-    decimalNumbers: true
+    decimalNumbers: true,
+    dateStrings: ['DATE']
   };
 }
 

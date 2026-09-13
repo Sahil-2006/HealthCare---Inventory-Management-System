@@ -8,7 +8,7 @@ A prototype for making regional medicine shortages visible before they become em
 - Regional summary, facilities, inventory, forecast, simulation, safe-plan, approval and audit routes
 - Seeded MySQL schema, deterministic insulin golden scenario, and switchable fixture fallback
 - Source-aware simulator, constrained safe-plan generator, and human approve/reject audit persistence
-- FastAPI intelligence adapter with timeout validation and an explicitly labelled fixture fallback
+- FastAPI intelligence service for forecasting and ripple simulation, with a timeout-bound Node fallback
 - Automated API tests and a GitHub Actions check
 
 ## Quick start
@@ -36,13 +36,13 @@ With Docker Desktop running, start the MySQL database and backend together:
 pnpm stack:up
 ```
 
-Wait for the backend health check, then open `http://127.0.0.1:3001/health`. It should report `"dataSource": "MYSQL"`. Use `pnpm stack:logs` to inspect services and `pnpm stack:down` to stop them. The data is intentionally simulated.
+Wait for the backend and intelligence health checks, then open `http://127.0.0.1:3001/health`. It should report `"dataSource": "MYSQL"`; the intelligence health endpoint is `http://127.0.0.1:8000/health`. The backend sends forecast and ripple-simulation requests to that service, and uses its labelled local fallback only when the service is unavailable. Use `pnpm stack:logs` to inspect services and `pnpm stack:down` to stop them. The data is intentionally simulated.
 
 For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE=mysql` in `.env`, and then run `pnpm dev`.
 
 ## Important prototype boundaries
 
-All data is simulated. Forecasts and plans are decision support, not clinical advice or autonomous transfer instructions. The backend validates exact medicine identity, route cold-chain capability, protected stock over the selected horizon, and human approval/audit data. Before release, connect Druv's tested FastAPI service and have Aaryan validate the final safety wording, equity rules, and acceptance cases.
+All data is simulated. Forecasts and plans are decision support, not clinical advice or autonomous transfer instructions. The backend validates exact medicine identity, route cold-chain capability, protected stock over the selected horizon, and human approval/audit data. Before release, have Aaryan validate the final safety wording, equity rules, and acceptance cases.
 
 ## Team handoffs
 

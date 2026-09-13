@@ -139,7 +139,7 @@ async function simulateScenario({ transfers, horizonDays }, inventoryStore) {
   };
 }
 
-async function optimisePlan(input, inventoryStore, planStore) {
+async function optimisePlan(input, inventoryStore, planStore, runSimulation = (scenario) => simulateScenario(scenario, inventoryStore)) {
   const destination = await inventoryStore.getScenarioProfile(input.destinationFacilityId, input.medicineId);
   if (!destination) {
     throw new AppError(404, 'OPTIMIZATION_TARGET_NOT_FOUND', 'The requested facility or medicine was not found.');
@@ -177,7 +177,7 @@ async function optimisePlan(input, inventoryStore, planStore) {
   if (quantityRemaining > 0) {
     throw new AppError(422, 'NO_SAFE_PLAN', 'No safe multi-source plan can cover the requested quantity within protected stock constraints.');
   }
-  const simulation = await simulateScenario({ transfers, horizonDays: input.horizonDays }, inventoryStore);
+  const simulation = await runSimulation({ transfers, horizonDays: input.horizonDays });
   if (!simulation.comparison.safeToRecommend) {
     throw new AppError(422, 'NO_SAFE_PLAN', 'The proposed plan would create a new projected risk or violate a feasibility rule.');
   }

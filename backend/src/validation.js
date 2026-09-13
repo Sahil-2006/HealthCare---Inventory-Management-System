@@ -44,12 +44,16 @@ function validateTransfers(body) {
       if (!Number.isFinite(transfer.quantity) || transfer.quantity <= 0) {
         throw new AppError(400, 'INVALID_REQUEST', `transfers[${index}].quantity must be a positive number.`);
       }
+      const arrivalDay = transfer.arrivalDay === undefined ? 1 : transfer.arrivalDay;
+      if (!Number.isInteger(arrivalDay) || arrivalDay < 1) {
+        throw new AppError(400, 'INVALID_REQUEST', `transfers[${index}].arrivalDay must be a whole number of at least 1.`);
+      }
       return {
         fromFacilityId: requireString(transfer.fromFacilityId, `transfers[${index}].fromFacilityId`),
         toFacilityId: requireString(transfer.toFacilityId, `transfers[${index}].toFacilityId`),
         medicineId: requireString(transfer.medicineId, `transfers[${index}].medicineId`),
         quantity: transfer.quantity,
-        arrivalDay: Number.isFinite(transfer.arrivalDay) ? transfer.arrivalDay : 1
+        arrivalDay
       };
     })
   };
@@ -81,4 +85,3 @@ function validateDecision(body) {
 }
 
 module.exports = { validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision };
-
