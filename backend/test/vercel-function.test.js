@@ -15,12 +15,16 @@ test('Vercel serverless wrapper serves the fixture API without external services
   });
   const loginPayload = await login.json();
   const response = await fetch(`http://127.0.0.1:${port}/api/region/summary`, {
-    headers: { authorization: `Bearer ${loginPayload.data.token}` }
+    headers: {
+      authorization: `Bearer ${loginPayload.data.token}`,
+      origin: 'https://frontend-psi-plum-56.vercel.app'
+    }
   });
   const payload = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(login.status, 200);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://frontend-psi-plum-56.vercel.app');
   assert.equal(payload.meta.source, 'FIXTURE_STORE');
   assert.equal(typeof payload.data.resilienceScore, 'number');
 });

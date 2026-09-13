@@ -11,6 +11,7 @@ Set these backend Vercel environment variables before deployment:
 ```dotenv
 AUTH_JWT_SECRET=<unique 48-byte base64url secret>
 AUTH_TOKEN_TTL_MINUTES=480
+CORS_ORIGINS=https://frontend-psi-plum-56.vercel.app
 ```
 
 The Vercel entry point deliberately forces `DATA_SOURCE=fixture` and disables

@@ -7,7 +7,9 @@ const config = createConfig({
   ...process.env,
   DATA_SOURCE: 'fixture',
   INTELLIGENCE_SERVICE_URL: '',
-  CORS_ORIGINS: ''
+  // The public fixture API accepts browser calls from the stable public UI.
+  // A custom domain can override this through the protected Vercel setting.
+  CORS_ORIGINS: process.env.CORS_ORIGINS || 'https://frontend-psi-plum-56.vercel.app'
 });
 
 module.exports = createApp(config);
