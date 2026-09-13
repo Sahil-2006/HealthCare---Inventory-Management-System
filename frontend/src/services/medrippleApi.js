@@ -1,6 +1,6 @@
 import { audit as mockAudit, candidates, dashboard, facility, plan, simulation } from '../data/mockData';
 
-const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
+const apiBase = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, '');
 const useMocks = import.meta.env.VITE_USE_MOCKS === 'true' || !apiBase;
 const destinationFacilityId = 'facility-navjeevan-phc';
 const requestedQuantity = 45;

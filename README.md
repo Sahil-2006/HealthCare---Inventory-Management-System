@@ -40,6 +40,12 @@ Wait for the backend and intelligence health checks, then open `http://127.0.0.1
 
 For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE=mysql` in `.env`, and then run `pnpm dev`.
 
+## Vercel review deployment
+
+Vercel serves the React workspace and the Express fixture vertical slice from one deployment: the frontend calls its same-origin `/api` route, so dashboard, facility, candidate, simulation, plan approval, and audit flows work without hard-coded localhost URLs. It is intentionally fixture-only and its in-memory approval history resets on a cold serverless instance.
+
+The MySQL-backed intelligence flow needs the Docker stack or another persistent Node/MySQL/FastAPI host. Do not label a Vercel fixture deployment as a production clinical system; it remains a simulated review demo.
+
 ## Important prototype boundaries
 
 All data is simulated. Forecasts and plans are decision support, not clinical advice or autonomous transfer instructions. The backend validates exact medicine identity, route cold-chain capability, protected stock over the selected horizon, and human approval/audit data. Before release, have Aaryan validate the final safety wording, equity rules, and acceptance cases.
