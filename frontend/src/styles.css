@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Manrope:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Manrope:wght@500;600&family=Outfit:wght@300;400;500;600&display=swap');
 
 :root { color: #263441; background: #f5f7f8; font-family: 'DM Sans', system-ui, sans-serif; font-synthesis: none; }
 * { box-sizing: border-box; }
@@ -74,3 +74,106 @@ h1, h2, h3, p { margin-top: 0; }h1, h2, h3 { color: #263441; font-family: Manrop
 .toast { animation: medripple-toast-enter .3s cubic-bezier(.2, .75, .25, 1) both; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* Frontend-2 visual system: retain the live API workflow while applying its
+   dark, glass-based workspace language. */
+:root {
+  color: #f8fafc;
+  background: #0b1120;
+  font-family: Outfit, 'DM Sans', system-ui, sans-serif;
+  --mr-surface-0: #0b1120;
+  --mr-surface-1: rgb(15 23 42 / .88);
+  --mr-surface-2: rgb(15 23 42 / .66);
+  --mr-border: rgb(255 255 255 / .09);
+  --mr-border-strong: rgb(125 211 252 / .25);
+  --mr-text: #f8fafc;
+  --mr-muted: #94a3b8;
+  --mr-subtle: #64748b;
+  --mr-accent: #38bdf8;
+  --mr-good: #86efac;
+  --mr-warning: #fcd34d;
+  --mr-danger: #fca5a5;
+}
+
+body {
+  color: var(--mr-text);
+  background:
+    radial-gradient(circle at 0 0, rgb(14 165 233 / .18), transparent 33rem),
+    radial-gradient(circle at 100% 100%, rgb(16 185 129 / .10), transparent 36rem),
+    var(--mr-surface-0);
+  background-attachment: fixed;
+}
+
+.workspace-shell, .app-state { background: transparent; }
+.workspace-sidebar {
+  background: rgb(15 23 42 / .82);
+  border-right: 1px solid var(--mr-border);
+  backdrop-filter: blur(18px);
+}
+.brand-icon { color: #0b1120; background: var(--mr-accent); box-shadow: 0 0 24px rgb(56 189 248 / .30); }
+.brand-row span, .nav-label, .workspace-sidebar nav button, .sidebar-footer > small, .profile small { color: var(--mr-muted); }
+.workspace-sidebar nav button:hover { background: rgb(255 255 255 / .06); }
+.workspace-sidebar nav button.active { border-color: rgb(56 189 248 / .35); background: rgb(56 189 248 / .12); box-shadow: inset 0 0 22px rgb(56 189 248 / .05); }
+.workspace-sidebar nav b, .profile > div { color: #0b1120; background: var(--mr-accent); }
+.sidebar-footer, .profile { border-color: var(--mr-border); }
+.sidebar-footer > p, .guide { color: #cbd5e1; }
+.sidebar-footer > p i { background: #4ade80; box-shadow: 0 0 8px rgb(74 222 128 / .7); }
+
+.workspace-topbar {
+  border-color: var(--mr-border);
+  background: rgb(15 23 42 / .62);
+  backdrop-filter: blur(18px);
+}
+.workspace-topbar > p, .page-copy, .muted, .workspace-main footer { color: var(--mr-muted); }
+.workspace-topbar strong, h1, h2, h3, td, td strong, .mr-stat strong, .transfer > div:last-child strong { color: var(--mr-text); }
+.top-pill { border-color: var(--mr-border-strong); color: var(--mr-muted); background: rgb(2 6 23 / .42); }
+.top-pill i { background: var(--mr-accent); box-shadow: 0 0 7px var(--mr-accent); }
+.workspace-main footer { border-color: var(--mr-border); }
+.eyebrow, .facility-link, .record-link { color: #7dd3fc; }
+
+.mr-card, .mr-stat {
+  border-color: var(--mr-border);
+  background: var(--mr-surface-2);
+  box-shadow: 0 4px 30px rgb(0 0 0 / .12);
+  backdrop-filter: blur(16px);
+}
+.mr-card:hover, .facility-status:hover, .assessment:hover, .scenario:hover { border-color: var(--mr-border-strong); box-shadow: 0 14px 34px rgb(0 0 0 / .24); }
+.mr-stat > span, th, td small, .card-heading p, .evidence p, .card-heading > span, .scenario-copy, .simulation-controls p, .inline-cta p, .audit-list p, .audit-list small, .audit-list > article > div > span { color: var(--mr-muted); }
+th, td, .evidence > div, .transfer, .plan-summary dl > div, .audit-list > article { border-color: var(--mr-border); }
+tbody tr:hover td { background: rgb(255 255 255 / .025); }
+.good, .mr-stat small.healthy, .scenario-result.healthy { color: var(--mr-good) !important; }
+.watch-text, .mr-stat small.watch { color: var(--mr-warning) !important; }
+.mr-stat small.critical, .scenario-result.critical { color: var(--mr-danger) !important; }
+
+.mr-button { color: #e2e8f0; border-color: var(--mr-border-strong); background: rgb(255 255 255 / .04); }
+.mr-button:hover { border-color: var(--mr-accent); background: rgb(56 189 248 / .12); }
+.mr-button.primary { color: #07111f; border-color: var(--mr-accent); background: var(--mr-accent); }
+.mr-button.primary:hover { background: #7dd3fc; }
+.mr-button.danger { color: var(--mr-danger); border: 1px solid rgb(252 165 165 / .2); background: rgb(239 68 68 / .14); }
+.risk-pill.healthy, .risk-pill.approved, .decision.approved { color: var(--mr-good); background: rgb(34 197 94 / .14); }
+.risk-pill.watch { color: var(--mr-warning); background: rgb(245 158 11 / .14); }
+.risk-pill.critical, .risk-pill.rejected, .decision.rejected { color: var(--mr-danger); background: rgb(239 68 68 / .14); }
+
+.risk-banner, .impact-banner { border: 1px solid rgb(125 211 252 / .20); background: linear-gradient(135deg, rgb(14 116 144 / .52), rgb(15 23 42 / .90)); box-shadow: 0 12px 30px rgb(0 0 0 / .18); }
+.risk-banner > div:first-child > span, .risk-banner p, .risk-banner > div:last-child > span, .impact-banner > div:first-child > p, .impact-banner small, .impact-banner span { color: #bae6fd; }
+.risk-banner .risk-pill { color: #fff; background: #dc2626; }
+.forecast-chart { border-color: var(--mr-border); background: repeating-linear-gradient(to bottom, transparent 0, transparent 37px, rgb(255 255 255 / .06) 38px); }
+.forecast-chart svg line { stroke: var(--mr-warning); }.forecast-chart svg polyline { stroke: var(--mr-accent); }.forecast-chart > div { color: var(--mr-subtle); }
+.safety-line { color: var(--mr-warning); background: rgb(245 158 11 / .14); }.stockout-line { color: var(--mr-danger); background: rgb(239 68 68 / .14); }
+.warning-note, .info-banner.warning { color: var(--mr-warning); background: rgb(245 158 11 / .14); border: 1px solid rgb(245 158 11 / .22); }
+.warning-note p, .info-banner p { color: var(--mr-warning); }
+.info-banner.success { color: var(--mr-good); background: rgb(34 197 94 / .14); }.info-banner.success p { color: var(--mr-good); }
+.horizon-switch { border-color: var(--mr-border); background: rgb(2 6 23 / .38); }.horizon-switch button { color: var(--mr-muted); }.horizon-switch button.active { color: #07111f; background: var(--mr-accent); }
+.scenario.critical { border-color: rgb(252 165 165 / .32); }.scenario.healthy { border-color: rgb(134 239 172 / .32); }
+.scenario-state p { color: #e2e8f0; }
+.transfer > b, .file-icon, .audit-icon { color: #0b1120; background: var(--mr-accent); }
+.audit-icon.approved { color: #052e16; background: var(--mr-good); }.audit-icon.rejected, .audit-icon.critical { color: #450a0a; background: var(--mr-danger); }
+.plan-summary textarea { color: var(--mr-text); border-color: var(--mr-border); background: rgb(2 6 23 / .38); }
+.empty-state { color: var(--mr-muted); border-color: var(--mr-border); background: var(--mr-surface-1); }.empty-state p { color: var(--mr-muted); }
+.toast { background: #0f172a; border: 1px solid var(--mr-border-strong); box-shadow: 0 14px 30px rgb(0 0 0 / .35); }
+
+@media (max-width: 760px) {
+  .workspace-sidebar { background: #0f172a; box-shadow: 12px 0 30px rgb(0 0 0 / .46); }
+  .menu-open { color: #e2e8f0; background: rgb(255 255 255 / .08); }
+  .sidebar-backdrop { background: rgb(2 6 23 / .68); }
+}
