@@ -7,7 +7,7 @@ A prototype for making regional medicine shortages visible before they become em
 - Express API with consistent JSON success and error envelopes
 - Regional summary, facilities, inventory, forecast, simulation, safe-plan, approval and audit routes
 - Seeded MySQL schema, deterministic insulin golden scenario, and switchable fixture fallback
-- Source-aware simulator, constrained safe-plan generator, and human approve/reject audit persistence
+- Source-aware simulator, constrained safe-plan generator, deterministic MySQL plans, and atomic reserve/dispatch/deliver/cancel audit persistence
 - FastAPI intelligence service for forecasting and ripple simulation, with a timeout-bound Node fallback
 - Sign-up/login, signed expiring sessions, and server-enforced operator/approver roles
 - Automated API tests and a GitHub Actions check
@@ -62,6 +62,9 @@ docker compose --env-file deploy/production.env -f compose.yaml -f compose.produ
 
 This production overlay removes the MySQL host port and requires database,
 authentication, and CORS values rather than accepting development defaults.
+Its MySQL lifecycle is `PROPOSED → RESERVED → IN_TRANSIT → DELIVERED` (or
+`REJECTED`/`CANCELLED`): approval atomically reserves donor stock and logs the
+decision; delivery alone increases recipient inventory.
 
 For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE=mysql` in `.env`, and then run `pnpm dev`.
 

@@ -30,8 +30,10 @@ included frontend container proxies `/api` to Express, so the browser has one
 public origin.
 
 1. Generate a unique `AUTH_JWT_SECRET`; do not use the development fallback.
-2. Initialise `database/schema.sql`, then run migrations including
-   `database/migrations/003_add_application_users.sql` for an existing volume.
+2. Initialise `database/schema.sql`, then run migrations through
+   `database/migrations/004_add_persistent_plans_and_lifecycle.sql` for an
+   existing volume. Migration 004 adds durable plans, linked transfer items,
+   lifecycle statuses, and deterministic reservation/delivery audit support.
 3. Set `DATA_SOURCE=mysql`, `INTELLIGENCE_SERVICE_URL`, database credentials,
    strict `CORS_ORIGINS`, and the generated auth secret.
 4. Copy `deploy/production.env.example` to `deploy/production.env`, replace
@@ -41,8 +43,17 @@ public origin.
    against the live stack.
 5. Remove or rotate the seeded Demo Approver password; create real approvers
    only after organisational identity verification.
-6. Verify the golden flow: login, forecast, simulate, optimise, approve as an
-   approver, inspect the persisted audit event, and sign out.
+6. Verify the golden flow: login, forecast, simulate, optimise twice (the ID
+   must be identical), approve as an approver, dispatch, deliver, inspect the
+   persisted audit event and recipient batch quantity, then sign out. Also
+   verify that a second approval returns `409 PLAN_ALREADY_DECIDED` and a
+   stale donor row returns `409 PLAN_STOCK_CHANGED` with no partial writes.
+
+For an existing MySQL volume, take a tested backup first, then apply migration
+004 once before deploying the new backend. It retains historical transfers;
+old `COMPLETED` rows are renamed to `DELIVERED`, while legacy rows without a
+`plan_id` remain readable. Do not point the production services at a database
+until its schema version and backup/restore procedure have been verified.
 
 ## Release guardrails
 
@@ -52,3 +63,5 @@ public origin.
   use.
 - Run a fresh-machine `pnpm install`, `pnpm stack:up`, and golden-flow check
   before final demonstration.
+- Production uses MySQL 8.4, which enforces the non-negative inventory CHECK
+  constraint. Do not deploy to an older MySQL version that ignores CHECKs.
