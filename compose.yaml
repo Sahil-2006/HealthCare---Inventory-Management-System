@@ -58,8 +58,8 @@ services:
       DATABASE_PASSWORD: medripple_dev_only
       SIMULATION_DATE: 2026-09-11
       INTELLIGENCE_SERVICE_URL: http://intelligence:8000
-      CORS_ORIGINS: http://localhost:5173
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-medripple-local-only-not-for-deployment-secret-2026}
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-medripple-local-only-not-for-production-2026}
       AUTH_TOKEN_TTL_MINUTES: 480
     depends_on:
       mysql:
@@ -70,6 +70,22 @@ services:
       - "3001:3001"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s
       timeout: 5s
       retries: 10

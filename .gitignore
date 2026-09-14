@@ -3,6 +3,7 @@ node_modules/
 .env.*
 !.env.example
 !frontend/.env.production
+deploy/production.env
 coverage/
 dist/
 tmp/

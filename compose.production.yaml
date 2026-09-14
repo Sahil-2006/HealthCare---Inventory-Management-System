@@ -1,0 +1,40 @@
+# Apply this file over compose.yaml for a persistent deployment:
+# docker compose --env-file deploy/production.env -f compose.yaml -f compose.production.yaml up --build -d
+services:
+  mysql:
+    restart: unless-stopped
+    ports: []
+    environment:
+      MYSQL_DATABASE: ${DATABASE_NAME:?Set DATABASE_NAME in deploy/production.env}
+      MYSQL_USER: ${DATABASE_USER:?Set DATABASE_USER in deploy/production.env}
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in deploy/production.env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in deploy/production.env}
+
+  intelligence:
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE: mysql
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in deploy/production.env}
+      DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in deploy/production.env}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in deploy/production.env}
+      SIMULATION_DATE: ${SIMULATION_DATE:-2026-09-11}
+
+  backend:
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE: mysql
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in deploy/production.env}
+      DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in deploy/production.env}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in deploy/production.env}
+      SIMULATION_DATE: ${SIMULATION_DATE:-2026-09-11}
+      INTELLIGENCE_SERVICE_URL: http://intelligence:8000
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set the public browser origin in deploy/production.env}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Generate and set AUTH_JWT_SECRET in deploy/production.env}
+      AUTH_TOKEN_TTL_MINUTES: ${AUTH_TOKEN_TTL_MINUTES:-480}
+
+  frontend:
+    restart: unless-stopped

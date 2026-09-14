@@ -36,13 +36,32 @@ organisation-assigned `APPROVER` or `ADMIN` can approve or reject a plan.
 
 ## Integrated local stack
 
-With Docker Desktop running, start the MySQL database and backend together:
+With Docker Desktop running, start the complete frontend, Express API, FastAPI
+intelligence service, and MySQL stack together:
 
 ```powershell
 pnpm stack:up
 ```
 
-Wait for the backend and intelligence health checks, then open `http://127.0.0.1:3001/health`. It should report `"dataSource": "MYSQL"`; the intelligence health endpoint is `http://127.0.0.1:8000/health`. The backend sends forecast and ripple-simulation requests to that service, and uses its labelled local fallback only when the service is unavailable. Use `pnpm stack:logs` to inspect services and `pnpm stack:down` to stop them. The data is intentionally simulated.
+Wait for the health checks, then open `http://127.0.0.1:8080`. The browser
+uses the same-origin `/api` proxy; it never needs a hard-coded localhost API
+address. `http://127.0.0.1:3001/health` should report
+`"dataSource": "MYSQL"`, and the intelligence health endpoint is
+`http://127.0.0.1:8000/health`. The backend sends forecast, ripple-simulation,
+and optimisation requests to that service, with a labelled Node fallback only
+when the service is unavailable. Use `pnpm stack:logs` to inspect services and
+`pnpm stack:down` to stop them. The data is intentionally simulated.
+
+For a persistent deployment, copy
+`deploy/production.env.example` to `deploy/production.env`, replace every
+placeholder with a unique secret and public origin, then run:
+
+```powershell
+docker compose --env-file deploy/production.env -f compose.yaml -f compose.production.yaml up --build -d
+```
+
+This production overlay removes the MySQL host port and requires database,
+authentication, and CORS values rather than accepting development defaults.
 
 For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE=mysql` in `.env`, and then run `pnpm dev`.
 
@@ -50,7 +69,13 @@ For a backend process running outside Docker, use `pnpm db:up`, set `DATA_SOURCE
 
 The public Vercel prototype uses two standard projects from this repository: deploy `backend/` first for the fixture API, then deploy `frontend/` with `VITE_API_BASE_URL` set to that API deployment's `/api` URL. The backend project deliberately uses a Vercel serverless catch-all rather than the development `listen()` entry point. This gives the public React UI real authenticated API calls without hard-coded localhost URLs.
 
-Set a unique `AUTH_JWT_SECRET` in the backend Vercel project before deploying. The Vercel service intentionally uses deterministic fixture data, and new public registrations/approval history live only for a warm serverless instance. It is a public prototype, not a persistent clinical production system.
+Set a unique `AUTH_JWT_SECRET` in the backend Vercel project before deploying.
+The Vercel service defaults to deterministic fixture data. It can use an
+externally reachable managed MySQL database and FastAPI service only when its
+protected environment explicitly sets `DATA_SOURCE=mysql`, database settings,
+and `INTELLIGENCE_SERVICE_URL`. Without those persistent services, new public
+registrations and approval history live only for a warm serverless instance.
+It is a public prototype, not a persistent clinical production system.
 
 The MySQL-backed intelligence flow and persistent accounts need the Docker stack or another persistent Node/MySQL/FastAPI host. See [docs/deployment.md](docs/deployment.md) for the production cutover checklist. Do not label the Vercel fixture deployment as a clinical system.
 
