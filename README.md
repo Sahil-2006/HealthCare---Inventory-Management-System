@@ -61,10 +61,11 @@ docker compose --env-file deploy/production.env -f compose.yaml -f compose.produ
 ```
 
 This production overlay removes the MySQL, FastAPI, Express, and frontend host
-ports. It places Caddy in front of the stack on ports 80/443, obtains a TLS
-certificate for `PUBLIC_DOMAIN`, and requires database, authentication, domain,
+ports. It places Caddy in front of the stack on ports 80/443 and obtains a TLS
+certificate for `PUBLIC_DOMAIN`. It requires database, authentication, domain,
 and CORS values rather than accepting development defaults. Point the domain's
-DNS A/AAAA record at the host before starting the stack.
+DNS A/AAAA record at the host before starting the stack. An ACME contact email
+is optional, so the committed template does not require personal contact data.
 Its MySQL lifecycle is `PROPOSED → RESERVED → IN_TRANSIT → DELIVERED` (or
 `REJECTED`/`CANCELLED`): approval atomically reserves donor stock and logs the
 decision; delivery alone increases recipient inventory.

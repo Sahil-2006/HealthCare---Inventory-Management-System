@@ -52,7 +52,6 @@ services:
         condition: service_healthy
     environment:
       PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in deploy/production.env}
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/production.env}
     ports:
       - "80:80"
       - "443:443"
