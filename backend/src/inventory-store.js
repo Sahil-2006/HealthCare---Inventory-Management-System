@@ -1,5 +1,6 @@
 const fixture = require('./fixture-store');
 const { createMysqlStore } = require('./mysql-store');
+const { PostgresInventoryStore } = require('./postgres-store');
 
 function createFixtureStore() {
   return {
@@ -48,8 +49,33 @@ function createFixtureStore() {
   };
 }
 
+function detectDatabaseType(databaseUrl) {
+  if (!databaseUrl) return null;
+  if (databaseUrl.startsWith('postgres://') || databaseUrl.startsWith('postgresql://')) {
+    return 'postgres';
+  }
+  if (databaseUrl.startsWith('mysql://')) {
+    return 'mysql';
+  }
+  return null;
+}
+
 function createInventoryStore(config) {
-  if (config.dataSource === 'mysql') return createMysqlStore(config);
+  // Auto-detect database type from DATABASE_URL
+  const databaseUrl = config.databaseUrl || process.env.DATABASE_URL;
+  const dbType = detectDatabaseType(databaseUrl);
+  
+  if (dbType === 'postgres') {
+    console.log('Using PostgreSQL store');
+    return new PostgresInventoryStore();
+  }
+  
+  if (config.dataSource === 'mysql' || dbType === 'mysql') {
+    console.log('Using MySQL store');
+    return createMysqlStore(config);
+  }
+  
+  console.log('Using fixture store');
   return createFixtureStore();
 }
 

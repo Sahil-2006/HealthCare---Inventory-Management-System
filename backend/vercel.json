@@ -1,12 +1,22 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "functions": {
-    "api/[...path].js": {
-      "maxDuration": 10
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/server.js",
+      "use": "@vercel/node"
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/[...path].js" }
-  ]
+  ],
+  "routes": [
+    {
+      "src": "/health",
+      "dest": "src/server.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "src/server.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 }
