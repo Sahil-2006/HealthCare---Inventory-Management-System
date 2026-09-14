@@ -9,5 +9,14 @@
     Permissions-Policy "geolocation=(), microphone=(), camera=()"
   }
 
-  reverse_proxy frontend:80
+  # Keep the public app and authenticated API under one TLS origin. This avoids
+  # browser CORS and cookie/session drift while leaving database and AI services
+  # private to the Compose network.
+  handle /api/* {
+    reverse_proxy backend:3001
+  }
+
+  handle {
+    reverse_proxy frontend:80
+  }
 }
