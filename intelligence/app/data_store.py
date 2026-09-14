@@ -73,6 +73,8 @@ class Batch:
     quantity: float
     expiry_date: date
     status: str
+    # batches.batch_id when the data source records one; None for the fixture, which only has batch numbers.
+    batch_id: int | None = None
 
     def is_usable_on(self, day: date) -> bool:
         return self.status == "USABLE" and self.expiry_date >= day

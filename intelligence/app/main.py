@@ -29,7 +29,9 @@ from .forecast import (
     clean_history,
     weighted_moving_average,
 )
+from .allocation_solver import SolverUnavailableError
 from .mysql_store import Connector, DatabaseDataError, DatabaseUnavailableError, MySQLDataSource
+from .optimizer import DEFAULT_OPTIMIZER_CONFIG, NoSafePlanError, OptimizationError, OptimizerConfig, run_optimization
 from .simulator import SimulationError, run_simulation
 from .risk_engine import (
     DEFAULT_RISK_CONFIG,
@@ -55,6 +57,9 @@ from .schemas import (
     HealthResponse,
     SimulationRequest,
     SimulationResponse,
+    NoSafePlanErrorResponse,
+    OptimizeRequest,
+    PlanResponse,
     InventoryBlock,
     MedicineBlock,
     ProjectionDayBlock,
@@ -379,6 +384,7 @@ def create_app(
     store: SimulatedDataStore | None = None,
     risk_config: RiskConfig = DEFAULT_RISK_CONFIG,
     data_source: DataSource | None = None,
+    optimizer_config: OptimizerConfig = DEFAULT_OPTIMIZER_CONFIG,
 ) -> FastAPI:
     """Build the app from a data source, a fixture store, or (by default) the DATA_SOURCE environment variable."""
     if data_source is None:
@@ -469,6 +475,35 @@ def create_app(
         """Ripple Simulator: read-only before/after projection of proposed transfers. Decision support only."""
         store = data_source.regional_store_for([item.medicine_id for item in payload.transfers])
         return run_simulation(store, payload, risk_config)
+
+    @app.exception_handler(OptimizationError)
+    async def handle_optimization_error(request: Request, error: OptimizationError) -> JSONResponse:
+        return error_response(error.status_code, error.code, error.message)
+
+    @app.exception_handler(NoSafePlanError)
+    async def handle_no_safe_plan(request: Request, error: NoSafePlanError) -> JSONResponse:
+        details = error.details.model_dump(mode="json", by_alias=True)
+        return JSONResponse(status_code=error.status_code, content={"error": {"code": error.code, "message": error.message, "details": details}})
+
+    @app.exception_handler(SolverUnavailableError)
+    async def handle_solver_unavailable(request: Request, error: SolverUnavailableError) -> JSONResponse:
+        logger.error("Optimizer solver unavailable: %s", error)
+        return error_response(503, "OPTIMIZER_UNAVAILABLE", str(error))
+
+    @app.post(
+        "/plans/optimize",
+        response_model=PlanResponse,
+        responses={
+            404: {"model": ErrorResponse},
+            422: {"model": NoSafePlanErrorResponse, "description": "NO_SAFE_PLAN; invalid requests use the plain error envelope."},
+            500: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    def optimize_plan(payload: OptimizeRequest) -> PlanResponse:
+        """Safe multi-source transfer optimizer (OR-Tools CP-SAT) validated by the Ripple Simulator. Decision support only; never writes."""
+        store = data_source.regional_store_for([payload.medicine_id])
+        return run_optimization(store, payload, optimizer_config, risk_config)
 
     return app
 

@@ -69,7 +69,7 @@ ORDER BY facility_id
 """
 
 INVENTORY_SQL = """
-SELECT i.facility_id, b.batch_number, i.quantity_on_hand, i.status, b.expiry_date, b.quarantined
+SELECT i.facility_id, b.batch_id, b.batch_number, i.quantity_on_hand, i.status, b.expiry_date, b.quarantined
 FROM inventory i
 JOIN batches b ON b.batch_id = i.batch_id
 WHERE b.medicine_id = %s
@@ -570,7 +570,18 @@ def normalise_batch(row: Row) -> Batch:
         quantity=_quantity(row["quantity_on_hand"], "inventory.quantity_on_hand"),
         expiry_date=_date(row["expiry_date"], "batches.expiry_date"),
         status=engine_status,
+        # The optimizer returns it so an approved plan can be persisted against the exact batch.
+        batch_id=_batch_id(row),
     )
+
+
+def _batch_id(row: Row) -> int | None:
+    value = row.get("batch_id")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DatabaseDataError(f"batches.batch_id must be an integer; got {value!r}.")
+    return value
 
 
 def _identity(row: Row) -> tuple[str, Decimal, str, str]:
