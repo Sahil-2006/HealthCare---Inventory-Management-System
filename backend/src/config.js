@@ -8,6 +8,11 @@ function readInteger(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readBoolean(value, fallback = false) {
+  if (value === undefined || value === '') return fallback;
+  return String(value).toLowerCase() === 'true';
+}
+
 function createConfig(environment = process.env) {
   const originList = (environment.CORS_ORIGINS || '')
     .split(',')
@@ -25,6 +30,8 @@ function createConfig(environment = process.env) {
     databaseName: environment.DATABASE_NAME || 'medripple',
     databaseUser: environment.DATABASE_USER || 'medripple',
     databasePassword: environment.DATABASE_PASSWORD || '',
+    databaseSsl: readBoolean(environment.DATABASE_SSL),
+    databaseSslRejectUnauthorized: readBoolean(environment.DATABASE_SSL_REJECT_UNAUTHORIZED, true),
     simulationDate: environment.SIMULATION_DATE || '2026-09-11',
     corsOrigins: originList,
     intelligenceServiceUrl: (environment.INTELLIGENCE_SERVICE_URL || '').replace(/\/$/, ''),

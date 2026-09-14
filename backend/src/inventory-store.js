@@ -25,11 +25,22 @@ function createFixtureStore() {
     async getRoute(fromFacilityId, toFacilityId) {
       return fixture.getRoute(fromFacilityId, toFacilityId);
     },
-    async selectTransferBatch(facilityId, medicineId) {
-      return fixture.selectTransferBatch(facilityId, medicineId);
+    async selectTransferBatch(facilityId, medicineId, horizonDays) {
+      return fixture.selectTransferBatch(facilityId, medicineId, horizonDays);
     },
     async recordPlanDecision() {
       return { storage: 'MEMORY' };
+    },
+    async persistPlan(plan) {
+      return { plan };
+    },
+    async getPlan() {
+      return null;
+    },
+    async assertQuantityPrecision() {},
+    async transitionPlan({ action }) {
+      const statusByAction = { DISPATCH: 'IN_TRANSIT', DELIVER: 'DELIVERED', CANCEL: 'CANCELLED' };
+      return { storage: 'MEMORY', planStatus: statusByAction[action] };
     },
     async listAuditEvents() {
       return [];

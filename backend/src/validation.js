@@ -83,4 +83,11 @@ function validateDecision(body) {
   };
 }
 
-module.exports = { validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision };
+function validateOperationalNote(body) {
+  const input = requireObject(body, 'Request body');
+  return { note: requireString(input.note, 'note') };
+}
+
+module.exports = {
+  validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision, validateOperationalNote
+};

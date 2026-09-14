@@ -160,7 +160,7 @@ async function optimisePlan(input, inventoryStore, planStore, runSimulation = (s
     if (quantityRemaining <= 0) break;
     const route = await inventoryStore.getRoute(source.facilityId, destination.facilityId);
     if (!route?.coldChainAvailable && (source.requiresColdChain || destination.requiresColdChain)) continue;
-    const batch = await inventoryStore.selectTransferBatch(source.facilityId, canonicalMedicineId);
+    const batch = await inventoryStore.selectTransferBatch(source.facilityId, canonicalMedicineId, input.horizonDays);
     if (!batch) continue;
     const quantity = Math.min(quantityRemaining, source.availableForTransfer);
     transfers.push({

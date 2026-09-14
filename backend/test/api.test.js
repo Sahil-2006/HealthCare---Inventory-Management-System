@@ -94,6 +94,38 @@ test('safe plan can be approved and creates an audit record', async () => {
   assert.equal(audit.body.data[0].action, 'PLAN_APPROVED');
 });
 
+test('identical fixture optimization requests use one deterministic plan identifier', async () => {
+  const requestBody = JSON.stringify({
+    destinationFacilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', quantity: 45, horizonDays: 14
+  });
+  const first = await request('/api/plans/optimize', {
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders }, body: requestBody
+  });
+  const second = await request('/api/plans/optimize', {
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders }, body: requestBody
+  });
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.match(first.body.data.id, /^plan-[a-f0-9]{32}$/);
+  assert.equal(second.body.data.id, first.body.data.id);
+});
+
+test('a fixture plan cannot be approved twice', async () => {
+  const planned = await request('/api/plans/optimize', {
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
+    body: JSON.stringify({ destinationFacilityId: 'facility-navjeevan-phc', medicineId: 'med-insulin-100iu-vial', quantity: 44, horizonDays: 14 })
+  });
+  const options = {
+    method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders },
+    body: JSON.stringify({ decision: 'APPROVE', note: 'First authorised decision.' })
+  };
+  const first = await request(`/api/plans/${planned.body.data.id}/approve`, options);
+  const repeated = await request(`/api/plans/${planned.body.data.id}/approve`, options);
+  assert.equal(first.response.status, 200);
+  assert.equal(repeated.response.status, 409);
+  assert.equal(repeated.body.error.code, 'PLAN_ALREADY_DECIDED');
+});
+
 test('invalid requests use the documented error envelope', async () => {
   const { response, body } = await request('/api/forecast', {
     method: 'POST', headers: { 'content-type': 'application/json', ...approverHeaders }, body: JSON.stringify({})

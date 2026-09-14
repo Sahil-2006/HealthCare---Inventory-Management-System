@@ -204,9 +204,14 @@ function listScenarioProfiles(medicineId) {
   return facilities.map((facility) => getScenarioProfile(facility.id, medicineId));
 }
 
-function selectTransferBatch(facilityId, medicineId) {
+function selectTransferBatch(facilityId, medicineId, horizonDays = 14) {
   if (medicineId !== medicine.id) return null;
-  const batch = (batchesByFacility[facilityId] || []).find((item) => item.status === 'USABLE');
+  const horizonEnd = new Date('2026-09-01T00:00:00Z');
+  horizonEnd.setUTCDate(horizonEnd.getUTCDate() + horizonDays - 1);
+  const horizonEndDate = horizonEnd.toISOString().slice(0, 10);
+  const batch = (batchesByFacility[facilityId] || [])
+    .filter((item) => item.status === 'USABLE' && item.expiryDate >= horizonEndDate)
+    .sort((left, right) => left.expiryDate.localeCompare(right.expiryDate) || left.batchNo.localeCompare(right.batchNo))[0];
   return batch ? { batchId: batch.batchNo, batchNo: batch.batchNo } : null;
 }
 

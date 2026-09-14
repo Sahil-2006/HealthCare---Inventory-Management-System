@@ -87,11 +87,12 @@ CREATE TABLE inventory (
     facility_id         INT NOT NULL,
     batch_id            INT NOT NULL,
     quantity_on_hand    DECIMAL(12,2) NOT NULL,            -- in medicine.base_unit
-    status              ENUM('AVAILABLE','QUARANTINED','EXPIRED','RESERVED') NOT NULL DEFAULT 'AVAILABLE',
+    status              ENUM('AVAILABLE','RESERVED','IN_TRANSIT','QUARANTINED','EXPIRED') NOT NULL DEFAULT 'AVAILABLE',
     last_updated        TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_inv_facility FOREIGN KEY (facility_id) REFERENCES facilities(facility_id),
     CONSTRAINT fk_inv_batch FOREIGN KEY (batch_id) REFERENCES batches(batch_id),
-    CONSTRAINT chk_qty_non_negative CHECK (quantity_on_hand >= 0)
+    CONSTRAINT chk_qty_non_negative CHECK (quantity_on_hand >= 0),
+    UNIQUE KEY uq_inventory_facility_batch_status (facility_id, batch_id, status)
 );
 
 -- ---------------------------------------------------------------------
@@ -142,25 +143,56 @@ CREATE TABLE routes (
 );
 
 -- ---------------------------------------------------------------------
--- TRANSFERS  (proposed/approved donor -> receiver movements)
+-- PLANS  (one deterministic, reviewable optimisation decision)
+-- plan_id is VARCHAR rather than CHAR(36): the intelligence service uses
+-- plan- plus 32 hexadecimal SHA-256 characters, which is 37 characters.
+-- ---------------------------------------------------------------------
+CREATE TABLE plans (
+    plan_id              VARCHAR(64) PRIMARY KEY,
+    destination_facility_id INT NOT NULL,
+    medicine_id          INT NOT NULL,
+    requested_quantity   DECIMAL(12,2) NOT NULL,
+    horizon_days         TINYINT UNSIGNED NOT NULL,
+    status               ENUM('PROPOSED','APPROVED','RESERVED','IN_TRANSIT','DELIVERED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PROPOSED',
+    rationale            TEXT NOT NULL,
+    plan_json            JSON NOT NULL,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    decided_at           TIMESTAMP NULL,
+    decided_by           VARCHAR(120),
+    CONSTRAINT chk_plan_quantity_positive CHECK (requested_quantity > 0),
+    CONSTRAINT chk_plan_horizon CHECK (horizon_days IN (7, 14, 30)),
+    CONSTRAINT fk_plan_destination FOREIGN KEY (destination_facility_id) REFERENCES facilities(facility_id),
+    CONSTRAINT fk_plan_medicine FOREIGN KEY (medicine_id) REFERENCES medicines(medicine_id),
+    INDEX idx_plans_status_created (status, created_at)
+);
+
+-- ---------------------------------------------------------------------
+-- TRANSFERS  (one reserved/transported batch per persisted plan)
 -- ---------------------------------------------------------------------
 CREATE TABLE transfers (
     transfer_id          INT PRIMARY KEY AUTO_INCREMENT,
+    plan_id              VARCHAR(64) NOT NULL,
     origin_facility_id   INT NOT NULL,
     destination_facility_id INT NOT NULL,
     medicine_id          INT NOT NULL,
     batch_id             INT NOT NULL,
     quantity             DECIMAL(12,2) NOT NULL,           -- in medicine.base_unit
-    status               ENUM('PROPOSED','REJECTED_UNSAFE','APPROVED','COMPLETED') NOT NULL DEFAULT 'PROPOSED',
+    status               ENUM('PROPOSED','REJECTED_UNSAFE','REJECTED','APPROVED','RESERVED','IN_TRANSIT','DELIVERED','CANCELLED') NOT NULL DEFAULT 'PROPOSED',
     rejection_reason     VARCHAR(200),
     requested_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     approved_at          TIMESTAMP NULL,
+    dispatched_at        TIMESTAMP NULL,
+    delivered_at         TIMESTAMP NULL,
+    cancelled_at         TIMESTAMP NULL,
     approved_by          VARCHAR(120),
     note                 VARCHAR(500),
     CONSTRAINT fk_tr_origin FOREIGN KEY (origin_facility_id) REFERENCES facilities(facility_id),
     CONSTRAINT fk_tr_dest FOREIGN KEY (destination_facility_id) REFERENCES facilities(facility_id),
     CONSTRAINT fk_tr_medicine FOREIGN KEY (medicine_id) REFERENCES medicines(medicine_id),
-    CONSTRAINT fk_tr_batch FOREIGN KEY (batch_id) REFERENCES batches(batch_id)
+    CONSTRAINT fk_tr_batch FOREIGN KEY (batch_id) REFERENCES batches(batch_id),
+    CONSTRAINT fk_tr_plan FOREIGN KEY (plan_id) REFERENCES plans(plan_id),
+    CONSTRAINT chk_transfer_quantity_positive CHECK (quantity > 0),
+    INDEX idx_transfers_plan_status (plan_id, status)
 );
 
 -- ---------------------------------------------------------------------
@@ -169,7 +201,7 @@ CREATE TABLE transfers (
 CREATE TABLE audit_events (
     audit_id             INT PRIMARY KEY AUTO_INCREMENT,
     entity_type          VARCHAR(40) NOT NULL,             -- 'transfer', 'plan', etc.
-    entity_id            INT NOT NULL,
+    entity_id            VARCHAR(64) NOT NULL,
     action               VARCHAR(40) NOT NULL,             -- 'APPROVE','REJECT','SIMULATE'
     actor                VARCHAR(120) NOT NULL,
     note                 VARCHAR(500),
@@ -394,7 +426,8 @@ SELECT
     FALSE,
     NULL
 FROM medicines m
-JOIN sim_digits lot ON lot.n < 2;
+JOIN sim_digits lot ON lot.n < 2
+ORDER BY m.medicine_id, lot.n;
 
 -- Simulated cold-chain excursion affecting one rabies-vaccine batch.
 

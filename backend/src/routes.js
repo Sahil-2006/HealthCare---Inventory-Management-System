@@ -1,7 +1,9 @@
 const express = require('express');
 const { AppError, asyncHandler } = require('./errors');
 const { publicUser, requireAuthentication, requireRole } = require('./auth');
-const { validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision } = require('./validation');
+const {
+  validateForecastRequest, validateTransfers, validateOptimizeRequest, validateDecision, validateOperationalNote
+} = require('./validation');
 const { simulateScenario, optimisePlan } = require('./scenario-service');
 const { createPlanStore } = require('./plan-store');
 
@@ -14,10 +16,29 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   const planStore = createPlanStore();
   const runScenario = async (input) => (await intelligenceAdapter.simulate(input))
     || simulateScenario(input, inventoryStore);
+  const persistPlan = async (candidate) => {
+    const inMemoryPlan = planStore.create(candidate);
+    const persisted = await inventoryStore.persistPlan(inMemoryPlan);
+    return persisted?.plan ? planStore.hydrate(persisted.plan) : inMemoryPlan;
+  };
+  const loadPlan = async (planId) => {
+    const inMemoryPlan = planStore.get(planId);
+    if (inMemoryPlan) return inMemoryPlan;
+    const persistedPlan = await inventoryStore.getPlan(planId);
+    return persistedPlan ? planStore.hydrate(persistedPlan) : null;
+  };
+  const assertScenarioPrecision = async (input) => {
+    await Promise.all(input.transfers.map((transfer) => inventoryStore.assertQuantityPrecision(transfer.medicineId, transfer.quantity)));
+  };
   const runOptimization = async (input) => {
     const intelligencePlan = await intelligenceAdapter.optimize(input);
-    if (!intelligencePlan) return optimisePlan(input, inventoryStore, planStore, runScenario);
-    return planStore.create({
+    if (!intelligencePlan) {
+      if (inventoryStore.source === 'MYSQL') {
+        throw new AppError(503, 'INTELLIGENCE_UNAVAILABLE', 'The safe allocation service is unavailable. No inventory-reserving plan was created; retry when the service is healthy.');
+      }
+      return persistPlan(await optimisePlan(input, inventoryStore, planStore, runScenario));
+    }
+    return persistPlan({
       ...intelligencePlan,
       medicine: intelligencePlan.medicine,
       destinationFacilityId: intelligencePlan.destinationFacilityId,
@@ -102,6 +123,7 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
 
   router.post('/scenarios/simulate', asyncHandler(async (request, response) => {
     const input = validateTransfers(request.body);
+    await assertScenarioPrecision(input);
     const scenario = await runScenario(input);
     success(response, scenario, {
       source: scenario.source || inventoryStore.source,
@@ -111,6 +133,7 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
 
   router.post('/plans/optimize', asyncHandler(async (request, response) => {
     const input = validateOptimizeRequest(request.body);
+    await inventoryStore.assertQuantityPrecision(input.medicineId, input.quantity);
     const plan = await runOptimization(input);
     success(response, plan, {
       source: plan.source || plan.simulation?.source || inventoryStore.source,
@@ -119,18 +142,31 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
     });
   }));
 
-  router.get('/plans/:planId', (request, response) => {
-    const plan = planStore.get(request.params.planId);
+  router.get('/plans/:planId', asyncHandler(async (request, response) => {
+    const plan = await loadPlan(request.params.planId);
     if (!plan) throw new AppError(404, 'PLAN_NOT_FOUND', 'The requested plan was not found.');
     success(response, plan, { source: inventoryStore.source });
-  });
+  }));
 
   router.post('/plans/:planId/approve', requireRole('APPROVER', 'ADMIN'), asyncHandler(async (request, response) => {
     const decision = validateDecision(request.body);
+    const plan = await loadPlan(request.params.planId);
+    if (!plan) throw new AppError(404, 'PLAN_NOT_FOUND', 'The requested plan was not found.');
     const actor = `${request.user.name} <${request.user.email}>`;
     const result = await planStore.decide(request.params.planId, { ...decision, actor }, inventoryStore);
     success(response, result, { source: inventoryStore.source, decisionSupportOnly: true });
   }));
+
+  for (const [path, action] of [['dispatch', 'DISPATCH'], ['deliver', 'DELIVER'], ['cancel', 'CANCEL']]) {
+    router.post(`/plans/:planId/${path}`, requireRole('APPROVER', 'ADMIN'), asyncHandler(async (request, response) => {
+      const { note } = validateOperationalNote(request.body);
+      const plan = await loadPlan(request.params.planId);
+      if (!plan) throw new AppError(404, 'PLAN_NOT_FOUND', 'The requested plan was not found.');
+      const actor = `${request.user.name} <${request.user.email}>`;
+      const result = await planStore.transition(plan.id, { action, actor, note }, inventoryStore);
+      success(response, result, { source: inventoryStore.source, decisionSupportOnly: true });
+    }));
+  }
 
   router.get('/audit', asyncHandler(async (request, response) => {
     const auditEvents = inventoryStore.source === 'MYSQL'

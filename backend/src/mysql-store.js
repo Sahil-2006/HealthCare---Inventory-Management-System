@@ -32,6 +32,16 @@ function project(row) {
   };
 }
 
+function parseJson(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
 function toScenarioProfile(row) {
   return {
     facilityId: row.facilityCode,
@@ -65,7 +75,8 @@ function createPoolOptions(config) {
     waitForConnections: true,
     connectionLimit: 10,
     decimalNumbers: true,
-    dateStrings: ['DATE']
+    dateStrings: ['DATE'],
+    ...(config.databaseSsl ? { ssl: { rejectUnauthorized: config.databaseSslRejectUnauthorized } } : {})
   };
 }
 
@@ -174,6 +185,37 @@ function createMysqlStore(config, dependencies = {}) {
     );
   }
 
+  async function getPersistedPlan(planId) {
+    const rows = await query(
+      `SELECT plan_id AS id, status, plan_json AS planJson,
+              created_at AS createdAt, decided_at AS decidedAt, decided_by AS decidedBy
+       FROM plans WHERE plan_id = ? LIMIT 1`,
+      [planId]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const plan = parseJson(row.planJson, {});
+    return {
+      ...plan,
+      id: row.id,
+      status: row.status,
+      createdAt: row.createdAt,
+      ...(row.decidedAt ? { decidedAt: row.decidedAt, decidedBy: row.decidedBy } : {})
+    };
+  }
+
+  async function assertQuantityPrecision(medicineId, quantity) {
+    const medicine = await resolveMedicine(medicineId);
+    if (!medicine) return;
+    const scaled = Number(quantity) * 100;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-9) {
+      throw new AppError(400, 'INVALID_QUANTITY_PRECISION', 'quantity must use no more than two decimal places.');
+    }
+    if (medicine.unit === 'count' && !Number.isInteger(Number(quantity))) {
+      throw new AppError(400, 'INVALID_QUANTITY_PRECISION', 'quantity must be a whole number for a count-based medicine.');
+    }
+  }
+
   return {
     source: 'MYSQL',
     async getHealth() {
@@ -233,63 +275,130 @@ function createMysqlStore(config, dependencies = {}) {
       );
       return rows[0] ? { ...rows[0], coldChainAvailable: Number(rows[0].coldChainAvailable) === 1 } : null;
     },
-    async selectTransferBatch(facilityId, medicineId) {
+    async selectTransferBatch(facilityId, medicineId, horizonDays = 14) {
       const [facility, medicine] = await Promise.all([resolveFacility(facilityId), resolveMedicine(medicineId)]);
       if (!facility || !medicine) return null;
       const rows = await query(
         `SELECT b.batch_id AS batchId, b.batch_number AS batchNo
          FROM inventory i JOIN batches b ON b.batch_id = i.batch_id
          WHERE i.facility_id = ? AND b.medicine_id = ?
-           AND i.status = 'AVAILABLE' AND b.quarantined = FALSE AND b.expiry_date >= ?
+           AND i.status = 'AVAILABLE' AND b.quarantined = FALSE
+           AND b.expiry_date >= DATE_ADD(?, INTERVAL ? DAY)
          ORDER BY b.expiry_date ASC, b.batch_id ASC LIMIT 1`,
-        [facility.id, medicine.id, config.simulationDate]
+        [facility.id, medicine.id, config.simulationDate, horizonDays - 1]
       );
       return rows[0] || null;
+    },
+    async persistPlan(plan) {
+      const [destination, medicine] = await Promise.all([
+        resolveFacility(plan.destinationFacilityId),
+        resolveMedicine(plan.medicine?.id || plan.transfers?.[0]?.medicineId)
+      ]);
+      if (!destination || !medicine) {
+        throw new AppError(422, 'PLAN_PERSISTENCE_FAILED', 'The plan cannot be mapped to a database facility and medicine.');
+      }
+      const requestedQuantity = Number(plan.requestedQuantity
+        || plan.transfers.reduce((total, transfer) => total + Number(transfer.quantity), 0));
+      const transferQuantity = plan.transfers.reduce((total, transfer) => total + Number(transfer.quantity), 0);
+      if (Math.abs(requestedQuantity - transferQuantity) > 0.00001) {
+        throw new AppError(422, 'PLAN_QUANTITY_MISMATCH', 'The optimiser plan transfer quantities do not equal the requested quantity.');
+      }
+      await query(
+        `INSERT INTO plans (
+          plan_id, destination_facility_id, medicine_id, requested_quantity, horizon_days,
+          status, rationale, plan_json
+        ) VALUES (?, ?, ?, ?, ?, 'PROPOSED', ?, ?)
+        ON DUPLICATE KEY UPDATE plan_id = VALUES(plan_id)`,
+        [
+          plan.id, destination.id, medicine.id, requestedQuantity, plan.horizonDays,
+          plan.rationale || 'A human review is required before any stock movement.', JSON.stringify(plan)
+        ]
+      );
+      return { plan: await getPersistedPlan(plan.id) };
+    },
+    async getPlan(planId) {
+      return getPersistedPlan(planId);
+    },
+    async assertQuantityPrecision(medicineId, quantity) {
+      await assertQuantityPrecision(medicineId, quantity);
     },
     async recordPlanDecision({ plan, decision, actor, note, beforeState, afterState }) {
       let connection;
       try {
         connection = await pool.getConnection();
         await connection.beginTransaction();
-        const auditEvents = [];
-        const status = decision === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+        const planStatus = decision === 'APPROVE' ? 'RESERVED' : 'REJECTED';
+        const [planResult] = await connection.query(
+          `UPDATE plans
+           SET status = ?, decided_at = CURRENT_TIMESTAMP, decided_by = ?
+           WHERE plan_id = ? AND status = 'PROPOSED'`,
+          [planStatus, actor, plan.id]
+        );
+        if (planResult.affectedRows !== 1) {
+          throw new AppError(409, 'PLAN_ALREADY_DECIDED', 'Only a proposed plan can be approved or rejected.');
+        }
+
+        const transferIds = [];
         for (const transfer of plan.transfers) {
+          if (decision === 'APPROVE') {
+            const [stockResult] = await connection.query(
+              `UPDATE inventory i
+               JOIN facilities source ON source.facility_id = i.facility_id
+               JOIN batches b ON b.batch_id = i.batch_id
+               LEFT JOIN facility_safety_stock safety
+                 ON safety.facility_id = i.facility_id AND safety.medicine_id = b.medicine_id
+               SET i.quantity_on_hand = i.quantity_on_hand - ?
+               WHERE source.facility_code = ?
+                 AND i.batch_id = ?
+                 AND b.medicine_id = ?
+                 AND i.status = 'AVAILABLE'
+                 AND b.quarantined = FALSE
+                 AND b.expiry_date >= DATE_ADD(?, INTERVAL ? DAY)
+                 AND i.quantity_on_hand >= ?
+                 AND i.quantity_on_hand - ? >= COALESCE(safety.safety_stock_qty, 0)`,
+              [
+                transfer.quantity, transfer.fromFacilityId, transfer.batchId, transfer.medicineId,
+                config.simulationDate, plan.horizonDays - 1, transfer.quantity, transfer.quantity
+              ]
+            );
+            if (stockResult.affectedRows !== 1) {
+              throw new AppError(409, 'PLAN_STOCK_CHANGED', 'The donor stock changed after this plan was generated. Re-run the optimizer and review the new conditions.');
+            }
+          }
+
           const [transferResult] = await connection.query(
             `INSERT INTO transfers (
-              origin_facility_id, destination_facility_id, medicine_id, batch_id, quantity,
+              plan_id, origin_facility_id, destination_facility_id, medicine_id, batch_id, quantity,
               status, rejection_reason, approved_at, approved_by, note
             )
-            SELECT source.facility_id, destination.facility_id, ?, ?, ?, ?, ?,
-                   CASE WHEN ? = 'APPROVED' THEN CURRENT_TIMESTAMP ELSE NULL END,
-                   CASE WHEN ? = 'APPROVED' THEN ? ELSE NULL END, ?
+            SELECT ?, source.facility_id, destination.facility_id, ?, ?, ?, ?, ?,
+                   CASE WHEN ? = 'RESERVED' THEN CURRENT_TIMESTAMP ELSE NULL END,
+                   CASE WHEN ? = 'RESERVED' THEN ? ELSE NULL END, ?
             FROM facilities source CROSS JOIN facilities destination
             WHERE source.facility_code = ? AND destination.facility_code = ?`,
             [
-              transfer.medicineId, transfer.batchId, transfer.quantity, status,
-              decision === 'REJECT' ? note : null, status, status, actor, note,
+              plan.id, transfer.medicineId, transfer.batchId, transfer.quantity, planStatus,
+              decision === 'REJECT' ? note : null, planStatus, planStatus, actor, note,
               transfer.fromFacilityId, transfer.toFacilityId
             ]
           );
           if (transferResult.affectedRows !== 1) {
             throw new AppError(422, 'TRANSFER_PERSISTENCE_FAILED', 'A plan transfer could not be mapped to database facilities.');
           }
-          const [auditResult] = await connection.query(
-            `INSERT INTO audit_events (
-              entity_type, entity_id, action, actor, note, before_state_json, after_state_json
-            ) VALUES ('transfer', ?, ?, ?, ?, ?, ?)`,
-            [
-              transferResult.insertId,
-              decision === 'APPROVE' ? 'APPROVE' : 'REJECT',
-              actor,
-              note,
-              JSON.stringify(beforeState),
-              JSON.stringify(afterState)
-            ]
-          );
-          auditEvents.push({ id: auditResult.insertId, transferId: transferResult.insertId });
+          transferIds.push(transferResult.insertId);
         }
+
+        const [auditResult] = await connection.query(
+          `INSERT INTO audit_events (
+            entity_type, entity_id, action, actor, note, before_state_json, after_state_json
+          ) VALUES ('plan', ?, ?, ?, ?, ?, ?)`,
+          [
+            plan.id, decision === 'APPROVE' ? 'RESERVE' : 'REJECT', actor, note,
+            JSON.stringify(beforeState), JSON.stringify(afterState)
+          ]
+        );
         await connection.commit();
-        return { storage: 'MYSQL', auditId: auditEvents[0]?.id, auditEvents };
+        return { storage: 'MYSQL', planStatus, auditId: auditResult.insertId, transferIds };
       } catch (error) {
         if (connection) await connection.rollback();
         if (error instanceof AppError) throw error;
@@ -298,9 +407,87 @@ function createMysqlStore(config, dependencies = {}) {
         connection?.release();
       }
     },
+    async transitionPlan({ plan, action, actor, note, beforeState }) {
+      const transition = {
+        DISPATCH: { from: 'RESERVED', to: 'IN_TRANSIT', transferFrom: 'RESERVED', transferTo: 'IN_TRANSIT', action: 'DISPATCH' },
+        DELIVER: { from: 'IN_TRANSIT', to: 'DELIVERED', transferFrom: 'IN_TRANSIT', transferTo: 'DELIVERED', action: 'DELIVER' },
+        CANCEL: { from: 'RESERVED', to: 'CANCELLED', transferFrom: 'RESERVED', transferTo: 'CANCELLED', action: 'CANCEL' }
+      }[action];
+      if (!transition) throw new AppError(400, 'INVALID_PLAN_TRANSITION', 'action must be DISPATCH, DELIVER, or CANCEL.');
+
+      let connection;
+      try {
+        connection = await pool.getConnection();
+        await connection.beginTransaction();
+        const [planResult] = await connection.query(
+          `UPDATE plans SET status = ?, decided_at = CURRENT_TIMESTAMP, decided_by = ?
+           WHERE plan_id = ? AND status = ?`,
+          [transition.to, actor, plan.id, transition.from]
+        );
+        if (planResult.affectedRows !== 1) {
+          throw new AppError(409, 'INVALID_PLAN_TRANSITION', `A ${transition.from} plan is required for ${action.toLowerCase()}.`);
+        }
+        const [transfers] = await connection.query(
+          `SELECT transfer_id AS id, origin_facility_id AS originFacilityId,
+                  destination_facility_id AS destinationFacilityId, batch_id AS batchId, quantity
+           FROM transfers WHERE plan_id = ? AND status = ? FOR UPDATE`,
+          [plan.id, transition.transferFrom]
+        );
+        if (transfers.length !== plan.transfers.length) {
+          throw new AppError(409, 'PLAN_STATE_CHANGED', 'The stored transfer state no longer matches the plan. Refresh before continuing.');
+        }
+
+        if (action === 'DELIVER') {
+          for (const transfer of transfers) {
+            await connection.query(
+              `INSERT INTO inventory (facility_id, batch_id, quantity_on_hand, status)
+               VALUES (?, ?, ?, 'AVAILABLE')
+               ON DUPLICATE KEY UPDATE quantity_on_hand = quantity_on_hand + VALUES(quantity_on_hand)`,
+              [transfer.destinationFacilityId, transfer.batchId, transfer.quantity]
+            );
+          }
+        }
+        if (action === 'CANCEL') {
+          for (const transfer of transfers) {
+            const [restoreResult] = await connection.query(
+              `UPDATE inventory SET quantity_on_hand = quantity_on_hand + ?
+               WHERE facility_id = ? AND batch_id = ? AND status = 'AVAILABLE'`,
+              [transfer.quantity, transfer.originFacilityId, transfer.batchId]
+            );
+            if (restoreResult.affectedRows !== 1) {
+              throw new AppError(409, 'PLAN_STOCK_CHANGED', 'The donor inventory cannot be safely released because its available row changed.');
+            }
+          }
+        }
+
+        const timestampColumn = action === 'DISPATCH' ? 'dispatched_at' : action === 'DELIVER' ? 'delivered_at' : 'cancelled_at';
+        await connection.query(
+          `UPDATE transfers SET status = ?, ${timestampColumn} = CURRENT_TIMESTAMP
+           WHERE plan_id = ? AND status = ?`,
+          [transition.transferTo, plan.id, transition.transferFrom]
+        );
+        const [auditResult] = await connection.query(
+          `INSERT INTO audit_events (
+            entity_type, entity_id, action, actor, note, before_state_json, after_state_json
+          ) VALUES ('plan', ?, ?, ?, ?, ?, ?)`,
+          [
+            plan.id, transition.action, actor, note, JSON.stringify(beforeState),
+            JSON.stringify({ status: transition.to, action })
+          ]
+        );
+        await connection.commit();
+        return { storage: 'MYSQL', planStatus: transition.to, auditId: auditResult.insertId };
+      } catch (error) {
+        if (connection) await connection.rollback();
+        if (error instanceof AppError) throw error;
+        throw new AppError(503, 'DATABASE_UNAVAILABLE', 'The MEDRIPPLE database could not transition the plan.', { databaseCode: error.code });
+      } finally {
+        connection?.release();
+      }
+    },
     async listAuditEvents() {
       return query(
-        `SELECT audit_id AS id, entity_type AS entityType, entity_id AS entityId, action,
+        `SELECT audit_id AS id, entity_type AS entityType, CAST(entity_id AS CHAR) AS entityId, action,
                 actor, note, before_state_json AS beforeState, after_state_json AS afterState,
                 event_timestamp AS timestamp
          FROM audit_events ORDER BY event_timestamp DESC, audit_id DESC LIMIT 100`

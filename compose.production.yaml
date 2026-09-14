@@ -30,6 +30,8 @@ services:
       DATABASE_NAME: ${DATABASE_NAME:?Set DATABASE_NAME in deploy/production.env}
       DATABASE_USER: ${DATABASE_USER:?Set DATABASE_USER in deploy/production.env}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in deploy/production.env}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
+      DATABASE_SSL_REJECT_UNAUTHORIZED: ${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}
       SIMULATION_DATE: ${SIMULATION_DATE:-2026-09-11}
       INTELLIGENCE_SERVICE_URL: http://intelligence:8000
       CORS_ORIGINS: ${CORS_ORIGINS:?Set the public browser origin in deploy/production.env}
