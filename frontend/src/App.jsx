@@ -125,13 +125,23 @@ function Simulator({ data, busy, onHorizon, onNavigate }) {
   </>;
 }
 
-function Plan({ data, onDecision, decisionBusy, onNavigate, canApprove }) {
+function Plan({ data, onDecision, onLifecycle, decisionBusy, onNavigate, canApprove }) {
   const [note, setNote] = useState('');
-  const settled = ['approved', 'rejected'].includes(data.status);
+  const isProposed = data.status === 'proposed';
+  const terminal = ['approved', 'rejected', 'cancelled', 'delivered'].includes(data.status);
+  const lifecycleCopy = {
+    approved: ['approved', 'The simulated fixture plan was approved and recorded in the audit trail.'],
+    reserved: ['stock reserved', 'Donor stock is reserved. Confirm dispatch when the shipment leaves the facility.'],
+    in_transit: ['in transit', 'Shipment is in transit. Confirm delivery only after receipt is verified.'],
+    delivered: ['delivered', 'The recipient inventory and audit trail were updated after delivery.'],
+    cancelled: ['cancelled', 'The reservation was released and donor stock was restored.'],
+    rejected: ['rejected', 'The decision was appended to the audit trail.'],
+  };
+  const lifecycle = lifecycleCopy[data.status];
   return <>
     <PageHead eyebrow="plan review" title="Recommended transfer plan" copy={`${data.target} · ${data.medicine} · ${data.presentation}`} action={<RiskPill tone={data.status === 'approved' ? 'healthy' : data.status === 'rejected' ? 'critical' : 'watch'}>{settled ? data.status : 'awaiting human approval'}</RiskPill>} />
     <section className="info-banner success"><Icon name="shield" /><p><strong>clinical verification check required</strong>{data.warning}</p></section>
-    <div className="plan-grid"><Card className="instruction-card"><p className="eyebrow">safe sourcing route</p><h2>instruction set</h2><p className="muted">{data.rationale}</p>{data.transfers.map((transfer, index) => <article className="transfer" key={transfer.source}><b>{index + 1}</b><div><span>source {index + 1}</span><h3>{transfer.source}</h3><p>deliver {transfer.quantity} {data.unit} of {data.medicine}</p><small>{transfer.constraint}</small></div><div><strong>{transfer.quantity}<small> {data.unit}</small></strong><span>{transfer.distance}</span><small>remaining safe stock <b>{transfer.remaining} {data.unit}</b></small></div></article>)}</Card><Card className="plan-summary"><h2>execution summary</h2><dl><div><dt>total sourced</dt><dd>{data.summary.total} {data.summary.unit}</dd></div><div><dt>new projected life</dt><dd className="good">{data.summary.projectedLife}</dd></div><div><dt>uncertainty factor</dt><dd className="watch-text">{data.summary.uncertainty}</dd></div><div><dt>new stockouts</dt><dd>{data.summary.noNewStockouts ? 'none projected' : 'review required'}</dd></div></dl><label>approval note <small>optional</small><textarea value={note} disabled={settled || !canApprove} onChange={(event) => setNote(event.target.value)} placeholder="add an operational note for the audit trail" /></label>{settled ? <div className={`decision ${data.status}`}><Icon name={data.status === 'approved' ? 'check' : 'close'} /><strong>plan {data.status}</strong><span>the decision was appended to the audit trail.</span></div> : !canApprove ? <div className="role-notice"><Icon name="shield" /><div><strong>approver role required</strong><span>operator accounts can review plans but cannot approve or reject them.</span></div></div> : <div className="plan-actions"><Button primary disabled={decisionBusy} onClick={() => onDecision('approved', note)}>{decisionBusy ? 'recording decision…' : 'approve transfers ✓'}</Button><Button disabled={decisionBusy} className="danger" onClick={() => onDecision('rejected', note)}>reject and re-route</Button></div>}<button className="record-link" onClick={() => onNavigate('audit')}>view decision record →</button></Card></div>
+    <div className="plan-grid"><Card className="instruction-card"><p className="eyebrow">safe sourcing route</p><h2>instruction set</h2><p className="muted">{data.rationale}</p>{data.transfers.map((transfer, index) => <article className="transfer" key={transfer.source}><b>{index + 1}</b><div><span>source {index + 1}</span><h3>{transfer.source}</h3><p>deliver {transfer.quantity} {data.unit} of {data.medicine}</p><small>{transfer.constraint}</small></div><div><strong>{transfer.quantity}<small> {data.unit}</small></strong><span>{transfer.distance}</span><small>remaining safe stock <b>{transfer.remaining} {data.unit}</b></small></div></article>)}</Card><Card className="plan-summary"><h2>execution summary</h2><dl><div><dt>total sourced</dt><dd>{data.summary.total} {data.summary.unit}</dd></div><div><dt>new projected life</dt><dd className="good">{data.summary.projectedLife}</dd></div><div><dt>uncertainty factor</dt><dd className="watch-text">{data.summary.uncertainty}</dd></div><div><dt>new stockouts</dt><dd>{data.summary.noNewStockouts ? 'none projected' : 'review required'}</dd></div></dl><label>operational note <small>required for decisions and lifecycle events</small><textarea value={note} disabled={terminal || !canApprove} onChange={(event) => setNote(event.target.value)} placeholder="record the approval, dispatch, delivery, or cancellation reason" /></label>{terminal ? <div className={`decision ${data.status}`}><Icon name={data.status === 'delivered' ? 'check' : 'close'} /><strong>plan {lifecycle?.[0] || data.status}</strong><span>{lifecycle?.[1]}</span></div> : !canApprove ? <div className="role-notice"><Icon name="shield" /><div><strong>approver role required</strong><span>operator accounts can review plans but cannot approve, dispatch, deliver, or cancel them.</span></div></div> : isProposed ? <div className="plan-actions"><Button primary disabled={decisionBusy} onClick={() => onDecision('approved', note)}>{decisionBusy ? 'recording decision…' : 'approve and reserve stock ✓'}</Button><Button disabled={decisionBusy} className="danger" onClick={() => onDecision('rejected', note)}>reject and re-route</Button></div> : data.status === 'reserved' ? <div className="plan-actions"><Button primary disabled={decisionBusy} onClick={() => onLifecycle('DISPATCH', note)}>{decisionBusy ? 'recording dispatch…' : 'confirm dispatch →'}</Button><Button disabled={decisionBusy} className="danger" onClick={() => onLifecycle('CANCEL', note)}>cancel and release stock</Button></div> : <div className="plan-actions"><Button primary disabled={decisionBusy} onClick={() => onLifecycle('DELIVER', note)}>{decisionBusy ? 'recording delivery…' : 'confirm delivery ✓'}</Button></div>}<button className="record-link" onClick={() => onNavigate('audit')}>view decision record →</button></Card></div>
   </>;
 }
 
@@ -198,7 +208,12 @@ function App() {
 
   const decide = async (decision, note) => {
     setDecisionBusy(true);
-    try { const plan = await medrippleApi.decidePlan({ planId: payload.plan.id, decision, note }); const audit = await medrippleApi.getAudit(); setPayload((current) => ({ ...current, plan, audit })); setToast(`plan ${decision}; an audit record was created.`); } catch (err) { setToast(err.message || 'the decision could not be recorded.'); } finally { setDecisionBusy(false); }
+    try { const plan = await medrippleApi.decidePlan({ planId: payload.plan.id, decision, note }); const audit = await medrippleApi.getAudit(); setPayload((current) => ({ ...current, plan, audit })); setToast(`plan ${decision}; an audit record was created.`); } catch (err) { setToast(err.code === 'PLAN_STOCK_CHANGED' ? 'conditions changed; please refresh and re-run the optimizer.' : err.message || 'the decision could not be recorded.'); } finally { setDecisionBusy(false); }
+  };
+
+  const transitionPlan = async (action, note) => {
+    setDecisionBusy(true);
+    try { const plan = await medrippleApi.transitionPlan({ planId: payload.plan.id, action, note }); const audit = await medrippleApi.getAudit(); setPayload((current) => ({ ...current, plan, audit })); setToast(`plan ${action.toLowerCase()} recorded; an audit record was created.`); } catch (err) { setToast(err.code === 'PLAN_STOCK_CHANGED' ? 'conditions changed; please refresh and re-run the optimizer.' : err.message || 'the lifecycle event could not be recorded.'); } finally { setDecisionBusy(false); }
   };
 
   const page = useMemo(() => {
@@ -206,7 +221,7 @@ function App() {
     if (view === 'facility') return <Facility data={payload.facility} onNavigate={setView} />;
     if (view === 'candidates') return <Candidates data={payload.candidates} onNavigate={setView} />;
     if (view === 'simulator') return <Simulator data={payload.simulation} busy={simulationBusy} onHorizon={changeHorizon} onNavigate={setView} />;
-    if (view === 'plan') return <Plan data={payload.plan} decisionBusy={decisionBusy} onDecision={decide} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
+    if (view === 'plan') return <Plan data={payload.plan} decisionBusy={decisionBusy} onDecision={decide} onLifecycle={transitionPlan} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
     if (view === 'audit') return <Audit rows={payload.audit} />;
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;
   }, [view, payload, simulationBusy, decisionBusy, user]);

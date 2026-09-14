@@ -12,10 +12,11 @@ let accessToken = typeof window === 'undefined' ? '' : window.localStorage.getIt
 const mockUser = { id: 'mock-operator', name: 'Demo Operator', email: 'demo.operator@medripple.demo', role: 'OPERATOR' };
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code = '') {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -82,7 +83,7 @@ async function request(path, { skipAuth = false, headers: customHeaders = {}, ..
   });
   const payload = await response.json().catch(() => null);
   if (response.status === 401 && !skipAuth) clearSession();
-  if (!response.ok) throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, response.status);
+  if (!response.ok) throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, response.status, payload?.error?.code);
   return payload?.data;
 }
 
@@ -155,16 +156,26 @@ function mapPlan(rawPlan, rawFacilities) {
 }
 
 function mapAudit(event) {
-  const approved = event.action === 'PLAN_APPROVED' || event.action === 'APPROVE';
+  const labels = {
+    PLAN_APPROVED: ['Transfer plan approved', 'Recommended transfer plan released after human review', 'approved'],
+    APPROVE: ['Transfer plan approved', 'Recommended transfer plan released after human review', 'approved'],
+    RESERVE: ['Donor stock reserved', 'Reserved stock is held pending dispatch confirmation', 'reserved'],
+    DISPATCH: ['Transfer dispatched', 'The shipment was marked in transit', 'in_transit'],
+    DELIVER: ['Transfer delivered', 'Recipient inventory was increased after delivery confirmation', 'delivered'],
+    CANCEL: ['Transfer cancelled', 'Reserved donor stock was released', 'cancelled'],
+    PLAN_REJECTED: ['Transfer plan rejected', 'Recommended transfer plan returned for re-routing', 'rejected'],
+    REJECT: ['Transfer plan rejected', 'Recommended transfer plan returned for re-routing', 'rejected'],
+  };
+  const [eventLabel, detail, status] = labels[event.action] || ['Plan event recorded', 'A decision-support lifecycle event was recorded', 'watch'];
   return {
     id: event.id,
-    event: approved ? 'Transfer plan approved' : 'Transfer plan rejected',
-    detail: approved ? 'Recommended transfer plan released after human review' : 'Recommended transfer plan returned for re-routing',
+    event: eventLabel,
+    detail,
     meta: event.note,
     actor: event.actor,
     at: formatTime(event.timestamp),
-    status: approved ? 'approved' : 'rejected',
-    source: 'Human approval',
+    status,
+    source: 'Human-authorised operation',
   };
 }
 
@@ -318,6 +329,16 @@ export const medrippleApi = {
       return { ...plan, id: planId, status: decision, auditEvent: event };
     }
     const response = await request(`/plans/${planId}/approve`, { method: 'POST', body: JSON.stringify({ decision: decision === 'approved' ? 'APPROVE' : 'REJECT', note: note.trim() || 'Decision recorded in the MEDRIPPLE workspace.' }) });
+    planCache = { ...response.plan, simulation: planCache?.simulation };
+    return mapPlan(planCache, await getFacilities());
+  },
+
+  async transitionPlan({ planId, action, note }) {
+    const endpoint = { DISPATCH: 'dispatch', DELIVER: 'deliver', CANCEL: 'cancel' }[action];
+    if (!endpoint) throw new ApiError('Unsupported plan lifecycle action.', 400, 'INVALID_PLAN_TRANSITION');
+    const response = await request(`/plans/${planId}/${endpoint}`, {
+      method: 'POST', body: JSON.stringify({ note: note.trim() || `Plan ${action.toLowerCase()} recorded in the MEDRIPPLE workspace.` })
+    });
     planCache = { ...response.plan, simulation: planCache?.simulation };
     return mapPlan(planCache, await getFacilities());
   },
