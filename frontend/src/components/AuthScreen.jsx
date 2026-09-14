@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Icon } from './Icon';
+import '../auth.css';
 
 const demoCredentials = {
   email: 'demo.approver@medripple.demo',
