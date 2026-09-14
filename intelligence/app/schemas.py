@@ -27,7 +27,15 @@ ProtectedStockSource = Literal["FORECAST_X_PROTECTED_DAYS", "FACILITY_SAFETY_STO
 
 
 class ApiModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, validate_by_alias=True)
+    # `populate_by_name` keeps internal snake_case construction compatible with
+    # Pydantic 2.10 and earlier; `validate_by_*` is the newer equivalent.
+    # The wire contract remains camelCase through the alias generator.
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        validate_by_name=True,
+        validate_by_alias=True,
+    )
 
 
 class ForecastRequest(BaseModel):
