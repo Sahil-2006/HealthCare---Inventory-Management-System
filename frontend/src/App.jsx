@@ -226,7 +226,7 @@ function App() {
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;
   }, [view, payload, simulationBusy, decisionBusy, user]);
 
-  if (!authReady || loading) return <div className="app-state"><Icon name="ripple" size={28} /><strong>loading medripple</strong><span>preparing your regional resilience snapshot…</span></div>;
+  if (!authReady || loading || (user && !payload.dashboard && !error)) return <div className="app-state"><Icon name="ripple" size={28} /><strong>loading medripple</strong><span>preparing your regional resilience snapshot…</span></div>;
   if (!user) return <AuthScreen api={medrippleApi} onAuthenticate={onAuthenticated} />;
   if (error) return <div className="app-state"><EmptyOrError title="regional workspace unavailable" copy={error} retry={load} /></div>;
   return <><Shell active={view} onNavigate={setView} menuOpen={menuOpen} setMenuOpen={setMenuOpen} snapshotAt={payload.dashboard.snapshotAt} dateLabel={payload.dashboard.dateLabel} user={user} onSignOut={onSignOut}>{page}</Shell>{toast && <div className="toast"><Icon name="check" size={15} />{toast}<button onClick={() => setToast('')} aria-label="dismiss"><Icon name="close" size={14} /></button></div>}</>;
