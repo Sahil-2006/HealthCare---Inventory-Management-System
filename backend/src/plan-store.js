@@ -6,9 +6,10 @@ function createPlanStore() {
   const audits = [];
 
   return {
-    create({ medicine, destinationFacilityId, horizonDays, transfers, rationale, assumptions, simulation }) {
+    create({ id, medicine, destinationFacilityId, horizonDays, transfers, rationale, assumptions, simulation, ...extra }) {
+      if (id && plans.has(id)) return plans.get(id);
       const plan = {
-        id: `plan-${crypto.randomUUID()}`,
+        id: id || `plan-${crypto.randomUUID()}`,
         status: 'PROPOSED',
         medicine,
         destinationFacilityId,
@@ -17,7 +18,8 @@ function createPlanStore() {
         rationale,
         assumptions,
         simulation,
-        decisionSupportOnly: true
+        decisionSupportOnly: true,
+        ...extra
       };
       plans.set(plan.id, plan);
       return plan;

@@ -56,3 +56,26 @@ test('uses the intelligence service for a compatible ripple simulation', async (
   assert.equal(scenario.comparison.safeToRecommend, true);
   assert.deepEqual(requests, [{ url: '/scenarios/simulate', body: { horizonDays: 14, transfers: [] } }]);
 });
+
+test('uses the intelligence optimizer plan without discarding batch persistence data', async (t) => {
+  const server = http.createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({
+      id: 'plan-ai-001', status: 'PROPOSED', medicine: { id: '7' },
+      transfers: [{ fromFacilityId: 'WH-001', toFacilityId: 'PHC-001', medicineId: '7', batchId: 99, quantity: 40 }],
+      simulation: {
+        baseline: { facilities: [] }, intervention: { facilities: [] }, transferEvaluations: [],
+        comparison: { safeToRecommend: true }
+      }
+    }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const { port } = server.address();
+  const adapter = createIntelligenceAdapter({ intelligenceServiceUrl: `http://127.0.0.1:${port}`, intelligenceTimeoutMs: 1000 }, {});
+
+  const plan = await adapter.optimize({ destinationFacilityId: 'PHC-001', medicineId: '7', quantity: 40, horizonDays: 7 });
+
+  assert.equal(plan.source, 'INTELLIGENCE_SERVICE');
+  assert.equal(plan.transfers[0].batchId, 99);
+});

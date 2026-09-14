@@ -21,6 +21,22 @@ function validateSimulationResponse(payload) {
   return payload;
 }
 
+function validateOptimizationResponse(payload) {
+  if (!payload || typeof payload !== 'object' || payload.status !== 'PROPOSED' || !payload.medicine || !payload.simulation) {
+    throw new Error('The intelligence response is missing optimization plan data.');
+  }
+  if (typeof payload.id !== 'string' || !Array.isArray(payload.transfers) || payload.transfers.length === 0
+    || !payload.transfers.every((transfer) => transfer.fromFacilityId && transfer.toFacilityId && transfer.medicineId
+      && Number.isFinite(transfer.quantity) && transfer.quantity > 0 && transfer.batchId !== undefined)) {
+    throw new Error('The intelligence response contains an invalid optimization plan.');
+  }
+  validateSimulationResponse(payload.simulation);
+  if (payload.simulation.comparison.safeToRecommend !== true) {
+    throw new Error('The intelligence response returned an unsafe optimization plan.');
+  }
+  return payload;
+}
+
 async function parseServiceError(response) {
   const payload = await response.json().catch(() => null);
   const code = payload?.error?.code || 'INTELLIGENCE_REQUEST_REJECTED';
@@ -109,8 +125,45 @@ function createIntelligenceAdapter(config, inventoryStore) {
       } finally {
         clearTimeout(timeout);
       }
+    },
+    async optimize(input) {
+      if (!config.intelligenceServiceUrl) return null;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), config.intelligenceTimeoutMs);
+      try {
+        const response = await fetch(`${config.intelligenceServiceUrl}/plans/optimize`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const serviceError = await parseServiceError(response);
+          // Invalid input and NO_SAFE_PLAN are decision-support results, not
+          // outages. Never replace either with a less-safe local plan.
+          if (response.status >= 400 && response.status < 500) throw serviceError;
+          throw new Error(serviceError.message);
+        }
+        return {
+          ...validateOptimizationResponse(await response.json()),
+          source: 'INTELLIGENCE_SERVICE',
+          decisionSupportOnly: true
+        };
+      } catch (error) {
+        if (error instanceof AppError) throw error;
+        return null;
+      } finally {
+        clearTimeout(timeout);
+      }
     }
   };
 }
 
-module.exports = { createIntelligenceAdapter, validateIntelligenceResponse, validateSimulationResponse, createFallbackForecast };
+module.exports = {
+  createIntelligenceAdapter,
+  validateIntelligenceResponse,
+  validateSimulationResponse,
+  validateOptimizationResponse,
+  createFallbackForecast
+};

@@ -695,7 +695,6 @@ The MySQL seed (10 facilities, 12 medicines, 75 days of consumption) is now read
 
 The Express API now proxies `/forecast` and `/scenarios/simulate` to this service when `INTELLIGENCE_SERVICE_URL` is configured. It passes deliberate 4xx intelligence errors through to callers and uses its own simulator only when the service times out or is unavailable. `optimisePlan` keeps its database-selected `batchId` for approval persistence, then evaluates the selected transfers through this service when available.
 
-<<<<<<< HEAD
 `compose.yaml` runs MySQL, this service, and the Node backend together. It sets `INTELLIGENCE_SERVICE_URL=http://intelligence:8000`; backend MySQL DATE values are deliberately returned as `YYYY-MM-DD` strings so timezone conversion cannot alter a replenishment date.
 
 The optimiser is served as `POST /plans/optimize`. The Node integration passes the validated request to this service when it is healthy, preserves its selected database batch IDs for audit persistence, and labels the existing Node optimiser as a fallback only when the intelligence service is unavailable. Deliberate validation and no-safe-plan responses remain visible to the caller rather than being silently converted to a fallback recommendation.

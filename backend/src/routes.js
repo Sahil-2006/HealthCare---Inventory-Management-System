@@ -14,6 +14,20 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   const planStore = createPlanStore();
   const runScenario = async (input) => (await intelligenceAdapter.simulate(input))
     || simulateScenario(input, inventoryStore);
+  const runOptimization = async (input) => {
+    const intelligencePlan = await intelligenceAdapter.optimize(input);
+    if (!intelligencePlan) return optimisePlan(input, inventoryStore, planStore, runScenario);
+    return planStore.create({
+      ...intelligencePlan,
+      medicine: intelligencePlan.medicine,
+      destinationFacilityId: intelligencePlan.destinationFacilityId,
+      horizonDays: intelligencePlan.horizonDays,
+      transfers: intelligencePlan.transfers,
+      rationale: intelligencePlan.rationale,
+      assumptions: intelligencePlan.assumptions,
+      simulation: intelligencePlan.simulation
+    });
+  };
 
   router.post('/auth/signup', asyncHandler(async (request, response) => {
     response.setHeader('Cache-Control', 'no-store');
@@ -97,10 +111,10 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
 
   router.post('/plans/optimize', asyncHandler(async (request, response) => {
     const input = validateOptimizeRequest(request.body);
-    const plan = await optimisePlan(input, inventoryStore, planStore, runScenario);
+    const plan = await runOptimization(input);
     success(response, plan, {
-      source: plan.simulation?.source || inventoryStore.source,
-      fallback: plan.simulation?.source !== 'INTELLIGENCE_SERVICE',
+      source: plan.source || plan.simulation?.source || inventoryStore.source,
+      fallback: (plan.source || plan.simulation?.source) !== 'INTELLIGENCE_SERVICE',
       decisionSupportOnly: true
     });
   }));
