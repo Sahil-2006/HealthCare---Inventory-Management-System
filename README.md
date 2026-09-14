@@ -60,8 +60,11 @@ placeholder with a unique secret and public origin, then run:
 docker compose --env-file deploy/production.env -f compose.yaml -f compose.production.yaml up --build -d
 ```
 
-This production overlay removes the MySQL host port and requires database,
-authentication, and CORS values rather than accepting development defaults.
+This production overlay removes the MySQL, FastAPI, Express, and frontend host
+ports. It places Caddy in front of the stack on ports 80/443, obtains a TLS
+certificate for `PUBLIC_DOMAIN`, and requires database, authentication, domain,
+and CORS values rather than accepting development defaults. Point the domain's
+DNS A/AAAA record at the host before starting the stack.
 Its MySQL lifecycle is `PROPOSED → RESERVED → IN_TRANSIT → DELIVERED` (or
 `REJECTED`/`CANCELLED`): approval atomically reserves donor stock and logs the
 decision; delivery alone increases recipient inventory.

@@ -12,6 +12,7 @@ services:
 
   intelligence:
     restart: unless-stopped
+    ports: !reset []
     environment:
       DATA_SOURCE: mysql
       DATABASE_HOST: mysql
@@ -23,6 +24,7 @@ services:
 
   backend:
     restart: unless-stopped
+    ports: !reset []
     environment:
       DATA_SOURCE: mysql
       DATABASE_HOST: mysql
@@ -40,3 +42,26 @@ services:
 
   frontend:
     restart: unless-stopped
+    ports: !reset []
+
+  edge:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?Set PUBLIC_DOMAIN in deploy/production.env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/production.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

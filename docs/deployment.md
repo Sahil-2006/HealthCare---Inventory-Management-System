@@ -29,6 +29,18 @@ that provides persistent MySQL storage and can reach the FastAPI service. The
 included frontend container proxies `/api` to Express, so the browser has one
 public origin.
 
+### Docker host cutover
+
+The lowest-risk path for this repository is one Linux host with Docker Engine,
+Compose v2, a persistent disk, and a domain name. The production overlay
+exposes only Caddy on ports 80 and 443; MySQL, FastAPI, Express, and nginx stay
+on the private Compose network. Caddy obtains and renews the TLS certificate.
+
+Before running the stack, create an A/AAAA DNS record for `PUBLIC_DOMAIN` that
+points to the host, allow inbound TCP 80 and 443 in the host firewall, and keep
+all other application ports closed. Do not place the MySQL port on the public
+internet.
+
 1. Generate a unique `AUTH_JWT_SECRET`; do not use the development fallback.
 2. Initialise `database/schema.sql`, then run migrations through
    `database/migrations/004_add_persistent_plans_and_lifecycle.sql` for an
@@ -37,7 +49,8 @@ public origin.
 3. Set `DATA_SOURCE=mysql`, `INTELLIGENCE_SERVICE_URL`, database credentials,
    strict `CORS_ORIGINS`, and the generated auth secret.
 4. Copy `deploy/production.env.example` to `deploy/production.env`, replace
-   every placeholder, and run
+   every placeholder (including `PUBLIC_DOMAIN`, `ACME_EMAIL`, and the exact
+   HTTPS `CORS_ORIGINS`), and run
    `docker compose --env-file deploy/production.env -f compose.yaml -f compose.production.yaml up --build -d`.
    Wait for all health checks, then run the backend and intelligence tests
    against the live stack.
@@ -54,6 +67,17 @@ For an existing MySQL volume, take a tested backup first, then apply migration
 old `COMPLETED` rows are renamed to `DELIVERED`, while legacy rows without a
 `plan_id` remain readable. Do not point the production services at a database
 until its schema version and backup/restore procedure have been verified.
+
+### Google Cloud option
+
+The signed-in Google Cloud project must have billing enabled before Cloud Run,
+Cloud SQL, Artifact Registry, or a Compute Engine host can be created. Enable
+billing first, then use either a persistent Docker host (the configuration
+above) or Cloud SQL plus separately deployed Node and FastAPI containers.
+Cloud Run and Cloud SQL require a Cloud SQL connection, service-account access,
+secret-backed database credentials, and a migration job; they are not services
+that Vercel can host internally. The official Google guide describes the Cloud
+Run-to-Cloud-SQL connection model.
 
 ## Release guardrails
 
