@@ -1,0 +1,39 @@
+# MEDRIPPLE Railway Multi-Service Container
+FROM node:20-slim
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy and install backend
+COPY backend/package*.json ./backend/
+RUN cd backend && npm ci --only=production
+
+# Copy and install intelligence service
+COPY intelligence/requirements.txt ./intelligence/
+RUN cd intelligence && \
+    python3 -m venv venv && \
+    . venv/bin/activate && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY backend ./backend
+COPY intelligence ./intelligence
+COPY database ./database
+
+# Environment defaults
+ENV NODE_ENV=production \
+    PORT=3000 \
+    AI_SERVICE_URL=http://localhost:8000
+
+# Expose ports
+EXPOSE 3000 8000
+
+# Start both services
+CMD ["/bin/sh", "-c", "cd /app/intelligence && . venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 & cd /app/backend && npm start"]
