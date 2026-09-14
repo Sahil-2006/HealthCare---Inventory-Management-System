@@ -71,7 +71,7 @@ export function AuthScreen({ onAuthenticate, api }) {
         <label className="auth-field">Password<input value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={signingUp ? 'new-password' : 'current-password'} type="password" minLength="10" maxLength="200" required placeholder="At least 10 characters" /></label>
         {signingUp && <label className="auth-field">Confirm password<input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" type="password" minLength="10" maxLength="200" required placeholder="Repeat your password" /></label>}
         {error && <p className="auth-error" role="alert"><Icon name="alert" size={16} />{error}</p>}
-        <button className="button button-primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait…' : signingUp ? 'Create account' : 'Sign in'}<Icon name="arrow" /></button>
+        <button className="mr-button primary auth-submit" disabled={busy} type="submit">{busy ? 'Please wait…' : signingUp ? 'Create account' : 'Sign in'}<Icon name="arrow" /></button>
         {!signingUp && <div className="demo-account"><div><span>PUBLIC SIMULATION ACCOUNT</span><strong>Demo Approver</strong><p>Can review and approve simulated plans.</p></div><button type="button" onClick={useDemo}>Use demo account</button></div>}
         <p className="auth-privacy">By continuing, you acknowledge this prototype uses simulated operational data. Never enter patient data or clinical records.</p>
       </form>
