@@ -45,7 +45,7 @@
 | Name | Value |
 |------|-------|
 | `DATABASE_URL` | Your Supabase connection string from Step 1 |
-| `JWT_SECRET` | `medripple-prod-secret-2026-change-this-to-random-string` |
+| `AUTH_JWT_SECRET` | A newly generated random secret of at least 32 characters |
 | `NODE_ENV` | `production` |
 
 6. Click **"Deploy"** → Wait 2-3 minutes
@@ -59,7 +59,7 @@
 2. Click on your **frontend** project (`frontend-psi-plum-56`)
 3. Click **"Settings"** → **"Environment Variables"**
 4. Find `VITE_API_BASE_URL` → Click "Edit"
-5. Change value to: `https://your-backend-url.vercel.app` (from Step 2)
+5. Change value to: `https://your-backend-url.vercel.app/api` (from Step 2)
 6. Click **"Save"**
 7. Go to **"Deployments"** tab → Click "..." on latest → **"Redeploy"**
 

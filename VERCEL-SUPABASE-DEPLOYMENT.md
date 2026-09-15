@@ -122,9 +122,9 @@ Click "Environment Variables" and add:
 | Name | Value |
 |------|-------|
 | `DATABASE_URL` | Your Supabase connection string from Step 1.3 |
-| `JWT_SECRET` | Generate random 32+ chars: `openssl rand -hex 32` |
+| `AUTH_JWT_SECRET` | Generate random 32+ chars and keep it private: `openssl rand -hex 32` |
 | `NODE_ENV` | `production` |
-| `PORT` | `10000` |
+| `CORS_ORIGINS` | Your deployed frontend URL (for example `https://frontend-psi-plum-56.vercel.app`) |
 
 > **Important**: Make sure `DATABASE_URL` is the full PostgreSQL connection string!
 
@@ -169,7 +169,7 @@ The AI service needs to be adapted for Vercel's serverless format. Files are alr
 ### 4.2 Update environment variables
 1. Click "Settings" → "Environment Variables"
 2. Find `VITE_API_BASE_URL`
-3. Update its value to your backend URL from Step 2.4
+3. Update its value to your backend URL from Step 2.4 followed by `/api` (for example, `https://medripple-backend.vercel.app/api`)
 4. If you deployed AI service, add:
    - Name: `VITE_AI_SERVICE_URL`
    - Value: Your AI service URL from Step 3.2
@@ -292,9 +292,9 @@ Your MEDRIPPLE system is now fully deployed:
 ### Backend (`backend/.env` or Vercel)
 ```bash
 DATABASE_URL=postgresql://postgres:PASSWORD@db.xxx.supabase.co:5432/postgres
-JWT_SECRET=your-super-secret-jwt-key-min-32-chars
+AUTH_JWT_SECRET=your-super-secret-jwt-key-min-32-chars
 NODE_ENV=production
-PORT=10000
+CORS_ORIGINS=https://your-frontend.vercel.app
 ```
 
 ### Frontend (`frontend/.env.production` or Vercel)
