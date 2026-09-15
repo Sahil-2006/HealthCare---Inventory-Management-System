@@ -1,19 +1,29 @@
 const { createApp } = require('../src/app');
 const { createConfig } = require('../src/config');
 
-// Select the backing store from the deployment environment. Supabase uses a
-// PostgreSQL DATABASE_URL; legacy MySQL deployments can still opt in with
-// DATA_SOURCE=mysql and DATABASE_HOST. With neither configured, the public
-// fixture remains available for demos and smoke tests.
-const usesPostgres = Boolean(process.env.DATABASE_URL) && /^(postgres|postgresql):\/\//i.test(process.env.DATABASE_URL);
-const usesManagedMysql = !usesPostgres && process.env.DATA_SOURCE === 'mysql' && Boolean(process.env.DATABASE_HOST);
+// Determine data source from environment
+const DATABASE_URL = process.env.DATABASE_URL || '';
+const usesPostgres = DATABASE_URL && /^(postgres|postgresql):\/\//i.test(DATABASE_URL);
+const usesMysql = !usesPostgres && process.env.DATA_SOURCE === 'mysql' && process.env.DATABASE_HOST;
+const dataSource = usesPostgres ? 'postgres' : usesMysql ? 'mysql' : 'fixture';
+
+// Create config with proper key names
 const config = createConfig({
-  ...process.env,
-  DATA_SOURCE: usesPostgres ? 'postgres' : usesManagedMysql ? 'mysql' : 'fixture',
-  INTELLIGENCE_SERVICE_URL: process.env.INTELLIGENCE_SERVICE_URL || '',
-  // The public fixture API accepts browser calls from the stable public UI.
-  // A custom domain can override this through the protected Vercel setting.
-  CORS_ORIGINS: process.env.CORS_ORIGINS || ''
+  NODE_ENV: process.env.NODE_ENV || 'production',
+  DATA_SOURCE: dataSource,
+  DATABASE_URL: DATABASE_URL,
+  DATABASE_HOST: process.env.DATABASE_HOST || '',
+  DATABASE_PORT: process.env.DATABASE_PORT || '3306',
+  DATABASE_NAME: process.env.DATABASE_NAME || 'medripple',
+  DATABASE_USER: process.env.DATABASE_USER || 'medripple',
+  DATABASE_PASSWORD: process.env.DATABASE_PASSWORD || '',
+  AUTH_JWT_SECRET: process.env.AUTH_JWT_SECRET || '',
+  CORS_ORIGINS: process.env.CORS_ORIGINS || '',
+  INTELLIGENCE_SERVICE_URL: process.env.INTELLIGENCE_SERVICE_URL || ''
 });
 
-module.exports = createApp(config);
+// Create Express app
+const app = createApp(config);
+
+// Export for Vercel serverless
+module.exports = app;
