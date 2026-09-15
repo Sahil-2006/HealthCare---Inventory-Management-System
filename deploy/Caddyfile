@@ -16,6 +16,12 @@
     reverse_proxy backend:3001
   }
 
+  # Keep the backend liveness endpoint reachable for the VM and external
+  # acceptance checks without exposing the database or intelligence services.
+  handle /health {
+    reverse_proxy backend:3001
+  }
+
   handle {
     reverse_proxy frontend:80
   }
