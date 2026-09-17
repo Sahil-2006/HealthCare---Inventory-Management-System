@@ -3,6 +3,23 @@ const http = require('node:http');
 const { test } = require('node:test');
 const { createIntelligenceAdapter } = require('../src/intelligence-adapter');
 
+test('NO_SAFE_PLAN preserves capacity and escalation details without a fallback', async (t) => {
+  const details = { requestedQuantity: 45, safeCapacity: 14.3, unmetQuantity: 30.7, unit: 'mL', recommendedEscalation: ['Review replenishment.'] };
+  const server = http.createServer((request, response) => {
+    response.writeHead(422, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: { code: 'NO_SAFE_PLAN', message: 'No safe plan', details } }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const adapter = createIntelligenceAdapter({ intelligenceServiceUrl: `http://127.0.0.1:${server.address().port}`, intelligenceTimeoutMs: 1000 }, {});
+  await assert.rejects(adapter.optimize({ quantity: 45, horizonDays: 14 }), (error) => {
+    assert.equal(error.code, 'NO_SAFE_PLAN');
+    assert.equal(error.status, 422);
+    assert.deepEqual(error.details, details);
+    return true;
+  });
+});
+
 test('database mode fallback forecasts against active database profiles', async () => {
   const requested = [];
   const inventoryStore = {

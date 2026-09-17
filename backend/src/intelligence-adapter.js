@@ -41,7 +41,7 @@ async function parseServiceError(response) {
   const payload = await response.json().catch(() => null);
   const code = payload?.error?.code || 'INTELLIGENCE_REQUEST_REJECTED';
   const message = payload?.error?.message || `Intelligence service returned ${response.status}.`;
-  return new AppError(response.status, code, message);
+  return new AppError(response.status, code, message, payload?.error?.details);
 }
 
 async function createFallbackForecast({ facilityId, medicineId, horizonDays }, inventoryStore) {

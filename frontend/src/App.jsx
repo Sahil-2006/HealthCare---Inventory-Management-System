@@ -115,7 +115,22 @@ function FacilityState({ label, entries }) {
   return <div className="scenario-state"><span>{label}</span>{entries.map((entry) => <p key={entry.name}><strong>{entry.name}</strong><b>{entry.days} days</b><RiskPill tone={entry.risk} /></p>)}</div>;
 }
 
-function Simulator({ data, busy, onHorizon, onNavigate }) {
+function NoSafePlan({ data, busy, onHorizon, onQuantity, onNavigate }) {
+  const details = data.details || {};
+  const unit = details.unit || 'units';
+  return <>
+    <PageHead eyebrow="safety assessment complete" title="No safe plan for this request" copy={`Requested ${data.quantity} ${unit} over ${data.horizon} days. The service is working; this request does not meet the safety constraints.`} />
+    <Card className="simulation-controls"><div><h2>simulation horizon</h2><p>A shorter horizon is a different assessment, not a safety override.</p></div><div className="horizon-switch">{[7, 14, 30].map((days) => <button key={days} className={data.horizon === days ? 'active' : ''} disabled={busy} onClick={() => onHorizon(days)}>{days} days</button>)}</div></Card>
+    <section className="info-banner warning" role="status"><Icon name="shield" /><p><strong>Donor stock remains protected</strong>{details.explanation || data.message} No transfer was approved or stock moved by this assessment.</p></section>
+    <div className="stat-grid three"><Stat label="requested quantity" value={`${data.quantity} ${unit}`} /><Stat label="safe donor capacity" value={Number.isFinite(details.safeCapacity) ? `${details.safeCapacity} ${unit}` : 'Unavailable'} /><Stat label="unmet quantity" value={Number.isFinite(details.unmetQuantity) ? `${details.unmetQuantity} ${unit}` : 'Unavailable'} /></div>
+    <Card><h2>Review the request</h2><form onSubmit={(event) => { event.preventDefault(); onQuantity(Number(new FormData(event.currentTarget).get('quantity'))); }}><label>Quantity ({unit}) <input key={data.quantity} name="quantity" type="number" min="0.01" step="0.01" defaultValue={data.quantity} required disabled={busy} /></label> <Button type="submit" primary disabled={busy}>{busy ? 'checking safety…' : 'simulate this quantity'}</Button></form><p>Changing the quantity does not approve a transfer. Every new result must pass the same checks.</p></Card>
+    {(details.recommendedEscalation || []).length > 0 && <Card><h2>Suggested next steps</h2><ul>{details.recommendedEscalation.map((item) => <li key={item}>{item}</li>)}</ul></Card>}
+    <div className="inline-cta"><Button disabled={busy} onClick={() => onQuantity(data.quantity)}>recheck current inventory</Button><Button onClick={() => onNavigate('candidates')}>review donor constraints</Button></div>
+  </>;
+}
+
+function Simulator({ data, busy, onHorizon, onQuantity, onNavigate }) {
+  if (data.noSafePlan) return <NoSafePlan data={data} busy={busy} onHorizon={onHorizon} onQuantity={onQuantity} onNavigate={onNavigate} />;
   const scenarios = [data.scenarios.single, data.scenarios.recommended];
   return <>
     <PageHead eyebrow="ripple simulation" title="Compare consequence before action" copy="see the regional effect of a transfer before a human approves it." action={<Button primary onClick={() => onNavigate('plan')}>review recommended plan <Icon name="arrow" size={14} /></Button>} />
@@ -165,6 +180,7 @@ function App() {
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [viewErrors, setViewErrors] = useState({});
+  const [retryVersion, setRetryVersion] = useState(0);
   const refreshInFlight = useRef(false);
 
   const load = async (background = false) => {
@@ -202,7 +218,7 @@ function App() {
     if (!user || view === 'dashboard') return undefined;
     let active = true;
     const key = view === 'simulator' ? 'simulation' : view;
-    const loaders = { facility: () => medrippleApi.getFacility(), candidates: () => medrippleApi.getCandidates(), simulation: () => medrippleApi.simulate(), plan: () => medrippleApi.getPlan(), audit: () => medrippleApi.getAudit() };
+    const loaders = { facility: () => medrippleApi.getFacility(), candidates: () => medrippleApi.getCandidates(), simulation: () => medrippleApi.simulate({ horizon: payload.simulation?.horizon || 14, quantity: payload.simulation?.quantity || 45 }), plan: () => medrippleApi.getPlan(), audit: () => medrippleApi.getAudit() };
     setViewErrors((current) => ({ ...current, [key]: '' }));
     loaders[key]().then((value) => {
       if (active) setPayload((current) => ({ ...current, [key]: value }));
@@ -210,7 +226,7 @@ function App() {
       if (active) setViewErrors((current) => ({ ...current, [key]: err.message }));
     });
     return () => { active = false; };
-  }, [user, view]);
+  }, [user, view, retryVersion]);
   useEffect(() => { if (!toast) return undefined; const timeout = window.setTimeout(() => setToast(''), 3500); return () => window.clearTimeout(timeout); }, [toast]);
 
   const onAuthenticated = (sessionUser) => {
@@ -232,7 +248,13 @@ function App() {
   const changeHorizon = async (horizon) => {
     if (horizon === payload.simulation?.horizon) return;
     setSimulationBusy(true);
-    try { const simulation = await medrippleApi.simulate({ horizon }); setPayload((current) => ({ ...current, simulation })); } catch (err) { setToast(err.message || 'could not refresh the simulation.'); } finally { setSimulationBusy(false); }
+    try { const simulation = await medrippleApi.simulate({ horizon, quantity: payload.simulation?.quantity || 45 }); setPayload((current) => ({ ...current, simulation })); } catch (err) { setToast(err.message || 'could not refresh the simulation.'); } finally { setSimulationBusy(false); }
+  };
+
+  const changeQuantity = async (quantity, horizon = payload.simulation?.horizon || 14) => {
+    if (!Number.isFinite(quantity) || quantity <= 0) { setToast('Enter a positive quantity.'); return; }
+    setSimulationBusy(true);
+    try { const simulation = await medrippleApi.simulate({ horizon, quantity }); setPayload((current) => ({ ...current, simulation })); } catch (err) { setToast(err.message || 'could not refresh the simulation.'); } finally { setSimulationBusy(false); }
   };
 
   const decide = async (decision, note) => {
@@ -248,11 +270,12 @@ function App() {
   const page = useMemo(() => {
     if (!payload.dashboard) return null;
     const key = view === 'simulator' ? 'simulation' : view;
-    if (viewErrors[key]) return <EmptyOrError title="This section is temporarily unavailable" copy={viewErrors[key]} retry={() => setView('dashboard')} />;
+    if (viewErrors[key]) return <EmptyOrError title="This section is temporarily unavailable" copy={viewErrors[key]} retry={() => setRetryVersion((current) => current + 1)} />;
     if (payload[key] === undefined) return <p role="status">Loading {view} from the backend…</p>;
     if (view === 'facility') return <Facility data={payload.facility} onNavigate={setView} />;
     if (view === 'candidates') return <Candidates data={payload.candidates} onNavigate={setView} />;
-    if (view === 'simulator') return <Simulator data={payload.simulation} busy={simulationBusy} onHorizon={changeHorizon} onNavigate={setView} />;
+    if (view === 'simulator') return <Simulator data={payload.simulation} busy={simulationBusy} onHorizon={changeHorizon} onQuantity={changeQuantity} onNavigate={setView} />;
+    if (view === 'plan' && payload.plan.noSafePlan) return <EmptyOrError title="No new safe plan is available" copy="The default 45-unit, 14-day request does not pass donor safety checks. Open the ripple simulator to see safe capacity and assess another quantity or horizon." retry={() => setView('simulator')} />;
     if (view === 'plan') return <Plan data={payload.plan} decisionBusy={decisionBusy} onDecision={decide} onLifecycle={transitionPlan} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
     if (view === 'audit') return <Audit rows={payload.audit} />;
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;

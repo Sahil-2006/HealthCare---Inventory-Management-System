@@ -1,4 +1,5 @@
 import { audit as mockAudit, candidates, dashboard, facility, plan, simulation } from '../data/mockData';
+import { noSafePlanOutcome } from './optimizationOutcome';
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, '');
 const useMocks = import.meta.env.VITE_USE_MOCKS === 'true' || !apiBase;
@@ -14,11 +15,12 @@ let accessToken = typeof window === 'undefined' ? '' : window.localStorage.getIt
 const mockUser = { id: 'mock-operator', name: 'Demo Operator', email: 'demo.operator@medripple.demo', role: 'OPERATOR' };
 
 export class ApiError extends Error {
-  constructor(message, status, code = '') {
+  constructor(message, status, code = '', details = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -87,7 +89,7 @@ async function request(path, { skipAuth = false, headers: customHeaders = {}, ..
   });
   const payload = await response.json().catch(() => null);
   if (response.status === 401 && !skipAuth) clearSession();
-  if (!response.ok) throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, response.status, payload?.error?.code);
+  if (!response.ok) throw new ApiError(payload?.error?.message || `Request failed (${response.status})`, response.status, payload?.error?.code, payload?.error?.details);
   return payload?.data;
 }
 
@@ -198,7 +200,9 @@ function buildScenario(title, source, result, tone, facilitiesBefore, facilities
   };
 }
 
-async function liveSimulation(horizon) {
+async function liveSimulation(horizon, quantity = requestedQuantity) {
+  // Re-evaluate against current inventory, including previous reservations.
+  facilityCache = null;
   const rawFacilities = await getFacilities();
   const destination = rawFacilities.find((item) => facilityId(item) === destinationFacilityId) || selectDestination(rawFacilities);
   const destinationId = facilityId(destination);
@@ -206,10 +210,16 @@ async function liveSimulation(horizon) {
     .filter((item) => facilityId(item) !== destinationId)
     .sort((left, right) => safeNumber(left.safeSurplus) - safeNumber(right.safeSurplus))[0];
   if (!destination || !unsafeSource) throw new ApiError('The active data source does not contain enough facilities for a transfer simulation.', 422);
-  const [optimisedPlan, unsafe] = await Promise.all([
-    request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: destinationId, medicineId: medicineId(destination), quantity: requestedQuantity, horizonDays: horizon }) }),
-    request('/scenarios/simulate', { method: 'POST', body: JSON.stringify({ horizonDays: horizon, transfers: [{ fromFacilityId: facilityId(unsafeSource), toFacilityId: destinationId, medicineId: medicineId(destination), quantity: requestedQuantity, arrivalDay: 1 }] }) }),
+  const [planResult, scenarioResult] = await Promise.allSettled([
+    request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: destinationId, medicineId: medicineId(destination), quantity, horizonDays: horizon }) }),
+    request('/scenarios/simulate', { method: 'POST', body: JSON.stringify({ horizonDays: horizon, transfers: [{ fromFacilityId: facilityId(unsafeSource), toFacilityId: destinationId, medicineId: medicineId(destination), quantity, arrivalDay: 1 }] }) }),
   ]);
+  if (planResult.status === 'rejected') return noSafePlanOutcome(planResult.reason, { horizon, quantity });
+  if (scenarioResult.status === 'rejected') throw scenarioResult.reason;
+  const optimisedPlan = planResult.value;
+  const unsafe = scenarioResult.value;
+  // Plan review must open this exact result, not silently generate a 14-day plan.
+  planCache = optimisedPlan;
   const unsafeEvaluation = unsafe.transferEvaluations[0];
   const recommended = optimisedPlan.simulation;
   const recommendedSources = optimisedPlan.transfers.map((transfer) => facilityName(rawFacilities.find((item) => facilityId(item) === transfer.fromFacilityId)) || transfer.fromFacilityId).join(' + ');
@@ -220,6 +230,7 @@ async function liveSimulation(horizon) {
   const scopedRecommendedAfter = recommended.intervention.facilities.filter((item) => recommendedIds.has(item.facilityId));
   return {
     horizon,
+    quantity,
     selected: 'recommended',
     scenarios: {
       single: buildScenario('Single-donor pull', facilityName(unsafeSource), unsafeEvaluation.eligible ? 'Transfer can proceed' : 'Blocked to protect donor safety stock', unsafeEvaluation.eligible ? 'watch' : 'critical', scopedUnsafe, scopedUnsafeAfter, unsafeEvaluation.eligible ? 'The simulator accepted this transfer.' : unsafeEvaluation.rejectionReasons[0]),
@@ -320,9 +331,9 @@ export const medrippleApi = {
     return { target: facilityName(destination), medicine: medicineLabel(destination), unit: destination.medicine?.unit || 'units', request: requestedQuantity, rows, safeCapacity: rows.filter((row) => row.eligible).reduce((total, row) => total + row.surplus, 0), protectedCount: rows.filter((row) => !row.eligible).length };
   },
 
-  async simulate({ horizon = 14 } = {}) {
+  async simulate({ horizon = 14, quantity = requestedQuantity } = {}) {
     if (useMocks) { await pause(240); return { ...simulation, horizon }; }
-    return liveSimulation(horizon);
+    return liveSimulation(horizon, quantity);
   },
 
   async getPlan() {
@@ -333,7 +344,12 @@ export const medrippleApi = {
       return mapPlan(planCache, rawFacilities);
     }
     const destination = rawFacilities.find((item) => facilityId(item) === destinationFacilityId) || selectDestination(rawFacilities);
-    const rawPlan = await request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: facilityId(destination), medicineId: medicineId(destination), quantity: requestedQuantity, horizonDays: 14 }) });
+    let rawPlan;
+    try {
+      rawPlan = await request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: facilityId(destination), medicineId: medicineId(destination), quantity: requestedQuantity, horizonDays: 14 }) });
+    } catch (error) {
+      return noSafePlanOutcome(error, { horizon: 14, quantity: requestedQuantity });
+    }
     planCache = rawPlan;
     return mapPlan(rawPlan, rawFacilities);
   },
