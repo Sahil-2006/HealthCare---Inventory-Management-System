@@ -1,5 +1,6 @@
 import { audit as mockAudit, candidates, dashboard, facility, plan, simulation } from '../data/mockData';
 import { noSafePlanOutcome } from './optimizationOutcome';
+import { createPlanSelection, loadSelectedPlan } from './planSelection';
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : '')).replace(/\/$/, '');
 const useMocks = import.meta.env.VITE_USE_MOCKS === 'true' || !apiBase;
@@ -9,6 +10,9 @@ let facilityCache = null;
 let facilityCacheAt = 0;
 let facilityRequest = null;
 let planCache = null;
+let selectionStorage;
+try { selectionStorage = typeof window === 'undefined' ? undefined : window.sessionStorage; } catch { /* Storage may be disabled. */ }
+const planSelection = createPlanSelection(selectionStorage);
 let auditEvents = [...mockAudit];
 const sessionStorageKey = 'medripple.session';
 let accessToken = typeof window === 'undefined' ? '' : window.localStorage.getItem(sessionStorageKey) || '';
@@ -71,6 +75,8 @@ function formatTime(timestamp) {
 
 function clearSession() {
   accessToken = '';
+  planCache = null;
+  planSelection.set(null);
   if (typeof window !== 'undefined') window.localStorage.removeItem(sessionStorageKey);
 }
 
@@ -201,6 +207,9 @@ function buildScenario(title, source, result, tone, facilitiesBefore, facilities
 }
 
 async function liveSimulation(horizon, quantity = requestedQuantity) {
+  // A new assessment must never leave an older plan selected for approval.
+  planCache = null;
+  planSelection.set(null);
   // Re-evaluate against current inventory, including previous reservations.
   facilityCache = null;
   const rawFacilities = await getFacilities();
@@ -214,12 +223,17 @@ async function liveSimulation(horizon, quantity = requestedQuantity) {
     request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: destinationId, medicineId: medicineId(destination), quantity, horizonDays: horizon }) }),
     request('/scenarios/simulate', { method: 'POST', body: JSON.stringify({ horizonDays: horizon, transfers: [{ fromFacilityId: facilityId(unsafeSource), toFacilityId: destinationId, medicineId: medicineId(destination), quantity, arrivalDay: 1 }] }) }),
   ]);
-  if (planResult.status === 'rejected') return noSafePlanOutcome(planResult.reason, { horizon, quantity });
+  if (planResult.status === 'rejected') {
+    const outcome = noSafePlanOutcome(planResult.reason, { horizon, quantity });
+    planSelection.set(outcome);
+    return outcome;
+  }
   if (scenarioResult.status === 'rejected') throw scenarioResult.reason;
   const optimisedPlan = planResult.value;
   const unsafe = scenarioResult.value;
   // Plan review must open this exact result, not silently generate a 14-day plan.
   planCache = optimisedPlan;
+  planSelection.set({ planId: optimisedPlan.id });
   const unsafeEvaluation = unsafe.transferEvaluations[0];
   const recommended = optimisedPlan.simulation;
   const recommendedSources = optimisedPlan.transfers.map((transfer) => facilityName(rawFacilities.find((item) => facilityId(item) === transfer.fromFacilityId)) || transfer.fromFacilityId).join(' + ');
@@ -274,6 +288,7 @@ export const medrippleApi = {
     clearSession();
     facilityCache = null;
     planCache = null;
+    planSelection.set(null);
   },
 
   async getDashboard() {
@@ -338,20 +353,10 @@ export const medrippleApi = {
 
   async getPlan() {
     if (useMocks) { await pause(); return plan; }
-    const rawFacilities = await getFacilities();
-    if (planCache) {
-      planCache = await request(`/plans/${planCache.id}`);
-      return mapPlan(planCache, rawFacilities);
-    }
-    const destination = rawFacilities.find((item) => facilityId(item) === destinationFacilityId) || selectDestination(rawFacilities);
-    let rawPlan;
-    try {
-      rawPlan = await request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: facilityId(destination), medicineId: medicineId(destination), quantity: requestedQuantity, horizonDays: 14 }) });
-    } catch (error) {
-      return noSafePlanOutcome(error, { horizon: 14, quantity: requestedQuantity });
-    }
+    const rawPlan = await loadSelectedPlan(planSelection, (id) => request(`/plans/${encodeURIComponent(id)}`));
+    if (rawPlan.noSelectedPlan || rawPlan.noSafePlan) return rawPlan;
     planCache = rawPlan;
-    return mapPlan(rawPlan, rawFacilities);
+    return mapPlan(rawPlan, await getFacilities());
   },
 
   async decidePlan({ planId, decision, note }) {

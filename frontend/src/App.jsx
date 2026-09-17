@@ -42,8 +42,8 @@ function PageHead({ eyebrow, title, copy, action }) {
   </div>;
 }
 
-function EmptyOrError({ title, copy, retry }) {
-  return <section className="empty-state" role="alert"><Icon name="alert" size={24} /><h1>{title}</h1><p>{copy}</p>{retry && <Button primary onClick={retry}>try again</Button>}</section>;
+function EmptyOrError({ title, copy, retry, actionLabel = 'try again' }) {
+  return <section className="empty-state" role="alert"><Icon name="alert" size={24} /><h1>{title}</h1><p>{copy}</p>{retry && <Button primary onClick={retry}>{actionLabel}</Button>}</section>;
 }
 
 function Shell({ active, onNavigate, children, menuOpen, setMenuOpen, snapshotAt, dateLabel, user, onSignOut, facilityCount }) {
@@ -220,6 +220,7 @@ function App() {
     const key = view === 'simulator' ? 'simulation' : view;
     const loaders = { facility: () => medrippleApi.getFacility(), candidates: () => medrippleApi.getCandidates(), simulation: () => medrippleApi.simulate({ horizon: payload.simulation?.horizon || 14, quantity: payload.simulation?.quantity || 45 }), plan: () => medrippleApi.getPlan(), audit: () => medrippleApi.getAudit() };
     setViewErrors((current) => ({ ...current, [key]: '' }));
+    if (key === 'plan') setPayload((current) => ({ ...current, plan: undefined }));
     loaders[key]().then((value) => {
       if (active) setPayload((current) => ({ ...current, [key]: value }));
     }).catch((err) => {
@@ -275,7 +276,8 @@ function App() {
     if (view === 'facility') return <Facility data={payload.facility} onNavigate={setView} />;
     if (view === 'candidates') return <Candidates data={payload.candidates} onNavigate={setView} />;
     if (view === 'simulator') return <Simulator data={payload.simulation} busy={simulationBusy} onHorizon={changeHorizon} onQuantity={changeQuantity} onNavigate={setView} />;
-    if (view === 'plan' && payload.plan.noSafePlan) return <EmptyOrError title="No new safe plan is available" copy="The default 45-unit, 14-day request does not pass donor safety checks. Open the ripple simulator to see safe capacity and assess another quantity or horizon." retry={() => setView('simulator')} />;
+    if (view === 'plan' && payload.plan.noSelectedPlan) return <EmptyOrError title="Select a plan to review" copy={payload.plan.missingPlan ? 'The selected plan is no longer available. Run a new assessment in the ripple simulator.' : 'Run a safety assessment in the ripple simulator, then choose review recommended plan. Opening this page does not create a new request or move stock.'} actionLabel="open ripple simulator" retry={() => setView('simulator')} />;
+    if (view === 'plan' && payload.plan.noSafePlan) return <EmptyOrError title="Your latest request needs adjustment" copy={`Your ${payload.plan.quantity}-${payload.plan.details?.unit || 'unit'}, ${payload.plan.horizon}-day assessment did not produce a safe plan. No transfer was approved. Open the simulator for donor capacity, reasons, and quantity controls.`} actionLabel="adjust request in simulator" retry={() => { setPayload((current) => ({ ...current, simulation: current.plan })); setView('simulator'); }} />;
     if (view === 'plan') return <Plan data={payload.plan} decisionBusy={decisionBusy} onDecision={decide} onLifecycle={transitionPlan} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
     if (view === 'audit') return <Audit rows={payload.audit} />;
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;
