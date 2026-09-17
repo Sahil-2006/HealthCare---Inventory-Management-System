@@ -67,7 +67,7 @@ function createPlanStore() {
       }
 
       const afterStatus = decision === 'APPROVE'
-        ? (inventoryStore.source === 'MYSQL' ? 'RESERVED' : 'APPROVED')
+        ? (['MYSQL', 'POSTGRES'].includes(inventoryStore.source) ? 'RESERVED' : 'APPROVED')
         : 'REJECTED';
       const beforeState = { status: plan.status, transfers: plan.transfers };
       const afterState = { status: afterStatus, transfers: plan.transfers };

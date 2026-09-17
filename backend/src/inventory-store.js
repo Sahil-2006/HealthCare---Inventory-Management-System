@@ -64,10 +64,13 @@ function createInventoryStore(config) {
   // Auto-detect database type from DATABASE_URL
   const databaseUrl = config.databaseUrl || process.env.DATABASE_URL;
   const dbType = detectDatabaseType(databaseUrl);
+  if ((databaseUrl && !dbType) || (config.dataSource === 'postgres' && dbType !== 'postgres')) {
+    throw new Error('A valid PostgreSQL DATABASE_URL is required; fixture fallback is disabled for database configuration.');
+  }
   
   if (dbType === 'postgres') {
     console.log('Using PostgreSQL store');
-    return new PostgresInventoryStore();
+    return new PostgresInventoryStore({ ...config, databaseUrl });
   }
   
   if (config.dataSource === 'mysql' || dbType === 'mysql') {

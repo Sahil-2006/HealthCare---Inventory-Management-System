@@ -4,6 +4,12 @@ A prototype for making regional medicine shortages visible before they become em
 
 ## What runs now
 
+The public deployment now uses **Vercel + persistent Supabase PostgreSQL**, with
+the FastAPI WMA forecast and OR-Tools CP-SAT service querying the same database.
+See [deployment status and runbook](docs/vercel-supabase.md). The database contains
+simulated repository records, not a live hospital feed. Demo passwords are not
+enabled on this deployment.
+
 - Express API with consistent JSON success and error envelopes
 - Regional summary, facilities, inventory, forecast, simulation, safe-plan, approval and audit routes
 - Seeded MySQL schema, deterministic insulin golden scenario, and switchable fixture fallback
@@ -14,22 +20,22 @@ A prototype for making regional medicine shortages visible before they become em
 
 ## Quick start
 
-Requires Node.js 20+ and pnpm 9+.
+Requires Node.js 24 and npm. Install each package from its committed lockfile.
 
 ```powershell
 Copy-Item .env.example .env
-pnpm install
-pnpm dev
+npm run setup
+npm run dev
 ```
 
 The API starts at `http://127.0.0.1:3001`; verify it with `GET /health`.
 
 ```powershell
-pnpm test
-pnpm check
+npm test
+npm run check
 ```
 
-Open the frontend in a second terminal with `pnpm dev:frontend`. The seeded
+Open the frontend in a second terminal with `npm run dev:frontend`. The local fixture-only
 simulation approver is `demo.approver@medripple.demo` with password
 `MedrippleDemo!2026`. Public sign-up creates an `OPERATOR` account; only an
 organisation-assigned `APPROVER` or `ADMIN` can approve or reject a plan.

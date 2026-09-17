@@ -21,6 +21,11 @@ function createApp(config) {
   const authService = createAuthService(authConfig, authStore);
 
   app.disable('x-powered-by');
+  // Inventory and account responses must not survive in browser/CDN caches.
+  app.use((request, response, next) => {
+    response.setHeader('Cache-Control', 'no-store');
+    next();
+  });
   app.use((request, response, next) => {
     response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -45,6 +50,21 @@ function createApp(config) {
       console.info(JSON.stringify({ requestId: response.locals.requestId, method: request.method, path: request.path, status: response.statusCode, durationMs: Date.now() - started }));
     });
     next();
+  });
+
+  // Visiting a Vercel backend URL directly is a common deployment check. Make
+  // it useful instead of returning the generic application 404; API clients
+  // should continue to use /api/* and operational checks should use /health.
+  app.get('/', (request, response) => {
+    response.json({
+      data: {
+        service: 'medripple-backend',
+        status: 'ok',
+        health: '/health',
+        apiBase: '/api'
+      },
+      meta: { requestId: response.locals.requestId }
+    });
   });
 
   app.get('/health', asyncHandler(async (request, response) => {

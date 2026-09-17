@@ -4,23 +4,23 @@
   "private": true,
   "description": "MEDRIPPLE prototype workspace",
   "scripts": {
-    "dev": "pnpm --filter @medripple/backend dev",
-    "start": "pnpm --filter @medripple/backend start",
-    "test": "pnpm --filter @medripple/backend test",
-    "check": "pnpm --filter @medripple/backend check && node --check \"backend/api/[...path].js\"",
-    "dev:frontend": "pnpm --filter @medripple/frontend dev",
-    "build:frontend": "pnpm --filter @medripple/frontend build",
-    "preview:frontend": "pnpm --filter @medripple/frontend preview",
+    "setup": "npm ci --prefix backend && npm ci --prefix frontend",
+    "dev": "npm --prefix backend run dev",
+    "start": "npm --prefix backend start",
+    "test": "npm --prefix backend test",
+    "check": "npm --prefix backend run check && node --check \"backend/api/[...path].js\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "preview:frontend": "npm --prefix frontend run preview",
     "dev:intelligence": "python -m uvicorn app.main:app --app-dir intelligence --reload --port 8000",
     "test:intelligence": "python -m pytest intelligence/tests",
-    "test:all": "pnpm test && pnpm test:intelligence",
+    "test:all": "npm test && npm run test:intelligence",
     "db:up": "docker compose -f database/compose.yaml up -d",
     "db:down": "docker compose -f database/compose.yaml down",
     "db:logs": "docker compose -f database/compose.yaml logs -f mysql",
     "stack:up": "docker compose up --build -d",
     "stack:down": "docker compose down",
     "stack:logs": "docker compose logs -f",
-    "stack:frontend": "pnpm --filter @medripple/frontend build"
-  },
-  "packageManager": "pnpm@11.19.0"
+    "stack:frontend": "npm --prefix frontend run build"
+  }
 }

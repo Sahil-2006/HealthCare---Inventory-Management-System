@@ -182,10 +182,14 @@ function createAuthService(config, authStore) {
       await authStore.recordLogin?.(user.id);
       return createSession(user);
     },
-    authenticate(request) {
+    async authenticate(request) {
       const header = request.get('authorization') || '';
       const match = /^Bearer\s+(.+)$/i.exec(header);
-      const user = verifySession(match?.[1], config);
+      const session = verifySession(match?.[1], config);
+      const user = await authStore.findByEmail(session.email);
+      if (!user || user.id !== session.id || user.active === false) {
+        throw new AppError(401, 'INVALID_SESSION', 'Your account is unavailable. Sign in again.');
+      }
       request.user = user;
       return user;
     }
@@ -193,9 +197,9 @@ function createAuthService(config, authStore) {
 }
 
 function requireAuthentication(authService) {
-  return (request, response, next) => {
+  return async (request, response, next) => {
     try {
-      authService.authenticate(request);
+      await authService.authenticate(request);
       next();
     } catch (error) {
       next(error);

@@ -7,6 +7,8 @@ pydantic==2.13.5
 # caching_sha2_password authentication.
 PyMySQL==1.2.0
 cryptography==50.0.1
+# Supabase PostgreSQL source for production Vercel deployment.
+psycopg[binary]==3.3.3
 # Transfer optimizer (POST /plans/optimize): the CP-SAT integer solver.
 ortools==9.15.6755
 

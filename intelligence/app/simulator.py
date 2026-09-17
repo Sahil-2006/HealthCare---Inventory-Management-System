@@ -1005,7 +1005,7 @@ def build_simulation_response(result: SimulationResult) -> SimulationResponse:
         for mapping in context.mappings
     ]
     return SimulationResponse(
-        scenario_type="SIMULATED_DATABASE" if context.data_source == "MYSQL" else "SIMULATED_FIXTURE",
+        scenario_type="SIMULATED_DATABASE" if context.data_source != "FIXTURE" else "SIMULATED_FIXTURE",
         horizon_days=result.horizon_days,
         medicine_id=medicine.id,
         medicine=SimulationMedicineBlock(

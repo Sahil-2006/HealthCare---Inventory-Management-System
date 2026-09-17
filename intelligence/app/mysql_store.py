@@ -187,6 +187,8 @@ class MySQLDataSource:
     name = DATA_SOURCE_NAME
 
     def __init__(self, settings: Settings, connector: Connector | None = None, history_days: int = HISTORY_DAYS) -> None:
+        self.data_source_name = DATA_SOURCE_NAME
+        self.description = DESCRIPTION
         self.simulation_date = settings.simulation_date
         # The seed snapshots inventory at 18:00 on the simulation date, after that day's consumption,
         # so projection day 1 is the following day (mapping "asOfDate").
@@ -358,8 +360,8 @@ class MySQLDataSource:
             ]
 
         context = DataContext(
-            data_source=DATA_SOURCE_NAME,
-            description=DESCRIPTION,
+            data_source=self.data_source_name,
+            description=self.description,
             simulation_date=self.simulation_date,
             protected_stock_assumption=(
                 "Protected stock = facility_safety_stock.safety_stock_qty recorded in the database (draft values until "

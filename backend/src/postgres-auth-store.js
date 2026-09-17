@@ -1,5 +1,6 @@
 const { Pool } = require('pg');
 const { AppError } = require('./errors');
+const { postgresTls } = require('./postgres-tls');
 
 function mapUser(row) {
   if (!row) return null;
@@ -16,17 +17,17 @@ function mapUser(row) {
 
 let pool = null;
 
-function getPool() {
+function getPool(config) {
   if (!pool) {
-    const databaseUrl = process.env.DATABASE_URL;
+    const databaseUrl = config.databaseUrl;
     if (!databaseUrl) {
       throw new Error('DATABASE_URL environment variable is required');
     }
     
     pool = new Pool({
       connectionString: databaseUrl,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      max: 10,
+      ssl: postgresTls(config),
+      max: 2,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
     });
@@ -39,7 +40,7 @@ function getPool() {
 }
 
 function createPostgresAuthStore(config, dependencies = {}) {
-  const db = dependencies.pool || getPool();
+  const db = dependencies.pool || getPool(config);
 
   async function query(sql, values = []) {
     try {

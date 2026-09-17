@@ -8,6 +8,10 @@
   ],
   "routes": [
     {
+      "src": "/",
+      "dest": "api/[...path].js"
+    },
+    {
       "src": "/health",
       "dest": "api/[...path].js"
     },

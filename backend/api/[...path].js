@@ -5,11 +5,15 @@ const { createConfig } = require('../src/config');
 const DATABASE_URL = process.env.DATABASE_URL || '';
 const usesPostgres = DATABASE_URL && /^(postgres|postgresql):\/\//i.test(DATABASE_URL);
 const usesMysql = !usesPostgres && process.env.DATA_SOURCE === 'mysql' && process.env.DATABASE_HOST;
-const dataSource = usesPostgres ? 'postgres' : usesMysql ? 'mysql' : 'fixture';
+const dataSource = usesPostgres ? 'postgres' : usesMysql ? 'mysql' : process.env.DATA_SOURCE || 'fixture';
 
 // Create config with proper key names
 const config = createConfig({
-  NODE_ENV: process.env.NODE_ENV || 'production',
+  ...process.env,
+  // Vercel supplies NODE_ENV=production through vercel.json. Keeping the
+  // local default as development lets the serverless wrapper be smoke-tested
+  // without a production signing secret.
+  NODE_ENV: process.env.NODE_ENV || (process.env.VERCEL ? 'production' : 'development'),
   DATA_SOURCE: dataSource,
   DATABASE_URL: DATABASE_URL,
   DATABASE_HOST: process.env.DATABASE_HOST || '',

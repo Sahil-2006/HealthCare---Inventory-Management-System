@@ -120,7 +120,7 @@ async function simulateScenario({ transfers, horizonDays }, inventoryStore) {
   });
 
   return {
-    scenarioType: inventoryStore.source === 'MYSQL' ? 'SIMULATED_DATABASE' : 'SIMULATED_FIXTURE',
+    scenarioType: inventoryStore.source === 'FIXTURE_STORE' ? 'SIMULATED_FIXTURE' : 'SIMULATED_DATABASE',
     horizonDays,
     medicineId,
     transferEvaluations: evaluations,

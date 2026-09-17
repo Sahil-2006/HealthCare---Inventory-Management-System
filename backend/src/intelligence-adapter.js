@@ -49,7 +49,7 @@ async function createFallbackForecast({ facilityId, medicineId, horizonDays }, i
   if (!profile) {
     throw new AppError(404, 'FORECAST_TARGET_NOT_FOUND', 'The requested facility or medicine was not found.');
   }
-  const source = inventoryStore.source === 'MYSQL' ? 'DATABASE_FALLBACK' : 'FIXTURE_FALLBACK';
+  const source = inventoryStore.source === 'FIXTURE_STORE' ? 'FIXTURE_FALLBACK' : 'DATABASE_FALLBACK';
   return {
     forecast: {
       dailyDemand: profile.dailyDemand,

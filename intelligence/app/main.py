@@ -19,7 +19,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
-from .config import MYSQL, Settings, load_settings
+from .config import MYSQL, POSTGRES, Settings, load_settings
+from .postgres_store import PostgreSQLDataSource
 from .data_store import DataContext, Facility, Replenishment, SimulatedDataStore
 from .forecast import (
     FORECAST_METHOD,
@@ -120,6 +121,8 @@ def build_data_source(settings: Settings, connector: Connector | None = None) ->
     """The configured data source. MySQL mode never falls back to the fixture."""
     if settings.data_source == MYSQL:
         return MySQLDataSource(settings, connector)
+    if settings.data_source == POSTGRES:
+        return PostgreSQLDataSource(settings, connector)
     return FixtureDataSource(SimulatedDataStore.from_csv())
 
 

@@ -14,6 +14,7 @@ function success(response, data, meta = {}) {
 function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   const router = express.Router();
   const planStore = createPlanStore();
+  const isPersistentStore = inventoryStore.source !== 'FIXTURE_STORE' && inventoryStore.source !== 'MEMORY';
   const runScenario = async (input) => (await intelligenceAdapter.simulate(input))
     || simulateScenario(input, inventoryStore);
   const persistPlan = async (candidate) => {
@@ -22,6 +23,10 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
     return persisted?.plan ? planStore.hydrate(persisted.plan) : inMemoryPlan;
   };
   const loadPlan = async (planId) => {
+    if (isPersistentStore) {
+      const persistedPlan = await inventoryStore.getPlan(planId);
+      return persistedPlan ? planStore.hydrate(persistedPlan) : null;
+    }
     const inMemoryPlan = planStore.get(planId);
     if (inMemoryPlan) return inMemoryPlan;
     const persistedPlan = await inventoryStore.getPlan(planId);
@@ -33,7 +38,7 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   const runOptimization = async (input) => {
     const intelligencePlan = await intelligenceAdapter.optimize(input);
     if (!intelligencePlan) {
-      if (inventoryStore.source === 'MYSQL') {
+      if (isPersistentStore) {
         throw new AppError(503, 'INTELLIGENCE_UNAVAILABLE', 'The safe allocation service is unavailable. No inventory-reserving plan was created; retry when the service is healthy.');
       }
       return persistPlan(await optimisePlan(input, inventoryStore, planStore, runScenario));
@@ -97,7 +102,7 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
       alerts: criticalFacilities.map((facility) => ({
         facilityId: facility.facilityId, riskLabel: facility.riskLabel, cause: 'LOW_SIMULATED_COVERAGE', daysRemaining: facility.daysRemaining
       })),
-      dataFreshness: inventoryStore.source === 'MYSQL' ? 'SIMULATED DATABASE' : 'SIMULATED FIXTURE'
+      dataFreshness: isPersistentStore ? 'SIMULATED DATABASE' : 'SIMULATED FIXTURE'
     }, { source: inventoryStore.source });
   }));
 
@@ -169,7 +174,7 @@ function createApiRouter({ authService, intelligenceAdapter, inventoryStore }) {
   }
 
   router.get('/audit', asyncHandler(async (request, response) => {
-    const auditEvents = inventoryStore.source === 'MYSQL'
+    const auditEvents = isPersistentStore
       ? await inventoryStore.listAuditEvents()
       : planStore.listAudits();
     success(response, auditEvents, { source: inventoryStore.source });

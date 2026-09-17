@@ -5,6 +5,8 @@ const useMocks = import.meta.env.VITE_USE_MOCKS === 'true' || !apiBase;
 const destinationFacilityId = 'facility-navjeevan-phc';
 const requestedQuantity = 45;
 let facilityCache = null;
+let facilityCacheAt = 0;
+let facilityRequest = null;
 let planCache = null;
 let auditEvents = [...mockAudit];
 const sessionStorageKey = 'medripple.session';
@@ -55,7 +57,7 @@ function createStockSeries(stock, demand, incoming) {
   return Array.from({ length: 14 }, (_, index) => {
     current = Math.max(0, current - demand);
     if (incoming && arrivalDay && index + 1 === arrivalDay) current += incoming.quantity;
-    return Math.min(100, Math.round(current));
+    return Math.round(current);
   });
 }
 
@@ -78,6 +80,8 @@ function saveSession(session) {
 
 async function request(path, { skipAuth = false, headers: customHeaders = {}, ...options } = {}) {
   const response = await fetch(`${apiBase}${path}`, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(45000),
     ...options,
     headers: { 'Content-Type': 'application/json', ...(accessToken && !skipAuth ? { Authorization: `Bearer ${accessToken}` } : {}), ...customHeaders },
   });
@@ -88,7 +92,14 @@ async function request(path, { skipAuth = false, headers: customHeaders = {}, ..
 }
 
 async function getFacilities() {
-  if (!facilityCache) facilityCache = await request('/facilities');
+  if (!facilityCache || Date.now() - facilityCacheAt > 5000) {
+    if (!facilityRequest) facilityRequest = request('/facilities').then((rows) => {
+      facilityCache = rows;
+      facilityCacheAt = Date.now();
+      return rows;
+    }).finally(() => { facilityRequest = null; });
+    return facilityRequest;
+  }
   return facilityCache;
 }
 
@@ -101,12 +112,12 @@ function mapDashboard(summary, rawFacilities) {
   const alertFacilities = new Map(rawFacilities.map((item) => [facilityId(item), item]));
   return {
     snapshotAt: summary.dataFreshness || 'Live backend',
-    dateLabel: 'Live fixture',
+    dateLabel: `Updated ${new Date().toLocaleTimeString()}`,
     metrics: [
-      { label: 'Resilience score', value: `${summary.resilienceScore}%`, detail: 'Regional fixture calculation', tone: summary.resilienceScore >= 70 ? 'healthy' : 'watch', icon: 'pulse' },
+      { label: 'Resilience score', value: `${summary.resilienceScore}%`, detail: 'Regional coverage calculation', tone: summary.resilienceScore >= 70 ? 'healthy' : 'watch', icon: 'pulse' },
       { label: 'Earliest stockout', value: summary.earliestStockout?.daysRemaining ?? '—', unit: 'days', detail: summary.earliestStockout?.facilityName || 'No critical facility', tone: 'critical', icon: 'clock' },
       { label: 'Critical count', value: String(summary.criticalFacilityCount).padStart(2, '0'), unit: `/ ${rawFacilities.length}`, detail: 'Facility stock coverage below 4 days', tone: 'critical', icon: 'alert' },
-      { label: 'Patient-days at risk', value: String(summary.patientDaysAtRisk), detail: 'Fixture projection across the network', tone: 'watch', icon: 'people' },
+      { label: 'Patient-days at risk', value: String(summary.patientDaysAtRisk), detail: 'Estimated from recorded consumption', tone: 'watch', icon: 'people' },
     ],
     facilities,
     alerts: summary.alerts.map((alert) => {
@@ -149,7 +160,7 @@ function mapPlan(rawPlan, rawFacilities) {
       total: rawPlan.transfers.reduce((sum, transfer) => sum + transfer.quantity, 0),
       projectedLife: outcome ? `${outcome.daysRemaining} days` : 'Review simulation',
       unit: rawPlan.medicine.unit,
-      uncertainty: 'Fixture model · low confidence',
+      uncertainty: rawPlan.source === 'INTELLIGENCE_SERVICE' ? 'AI allocation · human review required' : 'Fallback · low confidence',
       noNewStockouts: rawPlan.simulation?.comparison?.newRisks?.length === 0,
     },
   };
@@ -217,7 +228,7 @@ async function liveSimulation(horizon) {
     impact: {
       saved: Math.max(0, (recommended.baseline.criticalFacilityCount - recommended.intervention.criticalFacilityCount) * horizon),
       warnings: recommended.comparison.newRisks.length,
-      confidence: 'Fixture model · low confidence',
+      confidence: optimisedPlan.source === 'INTELLIGENCE_SERVICE' ? 'AI allocation · database snapshot' : 'Fallback · low confidence',
       notes: recommended.limitations.join(' '),
     },
   };
@@ -278,8 +289,10 @@ export const medrippleApi = {
       risk: riskTone(forecast.risk.label), riskScore: forecast.risk.score, effectiveStock: inventory.effectiveStock, unit: inventory.medicine.unit,
       dailyDemand: inventory.dailyConsumption, daysRemaining: forecast.stockout.daysRemaining,
       incomingSupply: incoming ? { amount: incoming.quantity, eta: incoming.expectedInDays ? `in ${incoming.expectedInDays} days` : incoming.expectedArrivalDate || 'Scheduled date pending', status: incoming.status === 'EXPECTED' ? 'Scheduled replenishment' : incoming.status } : { amount: 0, eta: 'No incoming supply', status: 'No replenishment recorded' },
-      cause: titleCase(forecast.cause), confidence: `${titleCase(forecast.confidence.label)} confidence · fixture fallback`, freshness: projected?.dataFreshness || 'Backend fixture',
-      series: createStockSeries(inventory.effectiveStock, inventory.dailyConsumption, incoming),
+      cause: titleCase(forecast.cause), confidence: `${titleCase(forecast.confidence.label)} confidence · ${forecast.isFallback ? 'labelled fallback' : forecast.modelVersion || 'intelligence service'}`, freshness: projected?.dataFreshness || 'Backend inventory',
+      explanation: forecast.explanation,
+      confidenceReason: forecast.confidence.reason,
+      series: forecast.projection?.length ? forecast.projection.map((day) => day.closingStock) : createStockSeries(inventory.effectiveStock, inventory.dailyConsumption, incoming),
       nextSteps: ['Review safe multi-source candidates', 'Verify replenishment timing and cold-chain routing', 'Send a plan for pharmacist approval'],
     };
   },
@@ -297,7 +310,7 @@ export const medrippleApi = {
         request(`/facilities/${facilityId(source)}/inventory?medicineId=${encodeURIComponent(medicineId(destination))}`),
       ]);
       const evaluation = scenario.transferEvaluations[0];
-      const usableBatch = inventory.batches.find((batch) => batch.status === 'USABLE');
+      const usableBatch = inventory.batches.find((batch) => ['USABLE', 'AVAILABLE'].includes(batch.status));
       return {
         id: facilityId(source), facility: facilityName(source), distance: evaluation.route?.distanceKm === null ? 'Route unavailable' : `${evaluation.route?.distanceKm ?? '—'} km`, type: titleCase(source.type),
         stock: source.effectiveStock, surplus: source.safeSurplus, unit: destination.medicine?.unit || inventory.medicine.unit, chain: evaluation.route?.coldChainAvailable ? 'Cold-chain available' : 'Cold-chain unavailable', expiry: usableBatch?.expiryDate || 'No usable batch', eligible: evaluation.eligible,
@@ -315,6 +328,10 @@ export const medrippleApi = {
   async getPlan() {
     if (useMocks) { await pause(); return plan; }
     const rawFacilities = await getFacilities();
+    if (planCache) {
+      planCache = await request(`/plans/${planCache.id}`);
+      return mapPlan(planCache, rawFacilities);
+    }
     const destination = rawFacilities.find((item) => facilityId(item) === destinationFacilityId) || selectDestination(rawFacilities);
     const rawPlan = await request('/plans/optimize', { method: 'POST', body: JSON.stringify({ destinationFacilityId: facilityId(destination), medicineId: medicineId(destination), quantity: requestedQuantity, horizonDays: 14 }) });
     planCache = rawPlan;
@@ -329,6 +346,7 @@ export const medrippleApi = {
       return { ...plan, id: planId, status: decision, auditEvent: event };
     }
     const response = await request(`/plans/${planId}/approve`, { method: 'POST', body: JSON.stringify({ decision: decision === 'approved' ? 'APPROVE' : 'REJECT', note: note.trim() || 'Decision recorded in the MEDRIPPLE workspace.' }) });
+    facilityCache = null;
     planCache = { ...response.plan, simulation: planCache?.simulation };
     return mapPlan(planCache, await getFacilities());
   },
@@ -339,6 +357,7 @@ export const medrippleApi = {
     const response = await request(`/plans/${planId}/${endpoint}`, {
       method: 'POST', body: JSON.stringify({ note: note.trim() || `Plan ${action.toLowerCase()} recorded in the MEDRIPPLE workspace.` })
     });
+    facilityCache = null;
     planCache = { ...response.plan, simulation: planCache?.simulation };
     return mapPlan(planCache, await getFacilities());
   },

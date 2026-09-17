@@ -186,7 +186,7 @@ class DataMappingBlock(ApiModel):
 
 
 class DataContextBlock(ApiModel):
-    data_source: Literal["FIXTURE", "MYSQL"]
+    data_source: Literal["FIXTURE", "MYSQL", "POSTGRES"]
     data_label: str
     simulation_date: dt.date = Field(description="Reference date of the data snapshot (MySQL: SIMULATION_DATE).")
     as_of_date: dt.date = Field(description="Projection day 1.")
@@ -432,7 +432,7 @@ class SimulationComparisonBlock(ApiModel):
 
 
 class SimulationDataContextBlock(ApiModel):
-    data_source: Literal["FIXTURE", "MYSQL"]
+    data_source: Literal["FIXTURE", "MYSQL", "POSTGRES"]
     data_label: str
     simulation_date: dt.date
     as_of_date: dt.date

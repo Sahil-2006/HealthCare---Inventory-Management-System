@@ -746,7 +746,7 @@ OPTIMIZER_LIMITATIONS = (
 
 
 def optimizer_mappings(scenario: Scenario) -> list[DataMapping]:
-    database = scenario.store.context.data_source == "MYSQL"
+    database = scenario.store.context.data_source != "FIXTURE"
     return [
         DataMapping(
             name="equityReserve",

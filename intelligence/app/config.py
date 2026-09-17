@@ -12,7 +12,8 @@ from datetime import date
 
 FIXTURE = "fixture"
 MYSQL = "mysql"
-DATA_SOURCES = (FIXTURE, MYSQL)
+POSTGRES = "postgres"
+DATA_SOURCES = (FIXTURE, MYSQL, POSTGRES)
 # Same default as backend/src/config.js: keeps the deterministic database seed on its simulation date.
 DEFAULT_SIMULATION_DATE = date(2026, 9, 11)
 
@@ -20,6 +21,7 @@ DEFAULT_SIMULATION_DATE = date(2026, 9, 11)
 @dataclass(frozen=True)
 class Settings:
     data_source: str = FIXTURE
+    database_url: str = ""
     database_host: str = "127.0.0.1"
     database_port: int = 3306
     database_name: str = "medripple"
@@ -35,11 +37,14 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
     data_source = _text(env, "DATA_SOURCE", FIXTURE).lower()
     if data_source not in DATA_SOURCES:
         raise ValueError(f"DATA_SOURCE must be one of {', '.join(DATA_SOURCES)}; got {data_source!r}.")
-    if data_source == MYSQL and _text(env, "DATABASE_URL", ""):
+    database_url = _text(env, "DATABASE_URL", "")
+    if data_source == MYSQL and database_url:
         raise ValueError(
             "DATABASE_URL is not supported by the intelligence service; set DATABASE_HOST, DATABASE_PORT, "
             "DATABASE_NAME, DATABASE_USER and DATABASE_PASSWORD instead."
         )
+    if data_source == POSTGRES and not database_url:
+        raise ValueError("DATABASE_URL is required when DATA_SOURCE=postgres.")
     raw_date = _text(env, "SIMULATION_DATE", DEFAULT_SIMULATION_DATE.isoformat())
     try:
         simulation_date = date.fromisoformat(raw_date)
@@ -47,6 +52,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         raise ValueError(f"SIMULATION_DATE must be a YYYY-MM-DD date; got {raw_date!r}.") from error
     return Settings(
         data_source=data_source,
+        database_url=database_url,
         database_host=_text(env, "DATABASE_HOST", "127.0.0.1"),
         database_port=_integer(env, "DATABASE_PORT", 3306),
         database_name=_text(env, "DATABASE_NAME", "medripple"),

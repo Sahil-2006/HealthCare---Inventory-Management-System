@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import './auth.css';
 import { Icon } from './components/Icon';
 import { AuthScreen } from './components/AuthScreen';
@@ -46,16 +46,16 @@ function EmptyOrError({ title, copy, retry }) {
   return <section className="empty-state" role="alert"><Icon name="alert" size={24} /><h1>{title}</h1><p>{copy}</p>{retry && <Button primary onClick={retry}>try again</Button>}</section>;
 }
 
-function Shell({ active, onNavigate, children, menuOpen, setMenuOpen, snapshotAt, dateLabel, user, onSignOut }) {
+function Shell({ active, onNavigate, children, menuOpen, setMenuOpen, snapshotAt, dateLabel, user, onSignOut, facilityCount }) {
   const current = navItems.find(([id]) => id === active)?.[1] || 'dashboard';
   const initials = user?.name?.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'MR';
   return <div className="workspace-shell">
     <aside className={`workspace-sidebar ${menuOpen ? 'open' : ''}`} aria-label="primary navigation">
       <div className="brand-row"><div className="brand-icon"><Icon name="ripple" size={18} /></div><div><strong>medripple</strong><span>care, connected.</span></div><button className="menu-close" aria-label="close navigation" onClick={() => setMenuOpen(false)}><Icon name="close" /></button></div>
       <p className="nav-label">workspace</p>
-      <nav>{navItems.map(([id, label, icon]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => { onNavigate(id); setMenuOpen(false); }}><Icon name={icon} size={16} /><span>{label}</span>{id === 'candidates' && <b>5</b>}</button>)}</nav>
+      <nav>{navItems.map(([id, label, icon]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => { onNavigate(id); setMenuOpen(false); }}><Icon name={icon} size={16} /><span>{label}</span></button>)}</nav>
       <div className="sidebar-spacer" />
-      <div className="sidebar-footer"><p><i />network snapshot</p><small>8 facilities connected</small><button className="guide"><span>?</span>workspace guide</button><div className="profile"><div>{initials}</div><p><strong>{user?.name || 'workspace user'}</strong><small>{user?.role?.toLowerCase() || 'operator'} account</small></p><button className="sign-out" type="button" onClick={onSignOut} aria-label="sign out"><Icon name="logout" size={15} /></button></div></div>
+      <div className="sidebar-footer"><p><i />network snapshot</p><small>{facilityCount} facilities · refreshes every 30s</small><div className="profile"><div>{initials}</div><p><strong>{user?.name || 'workspace user'}</strong><small>{user?.role?.toLowerCase() || 'operator'} account</small></p><button className="sign-out" type="button" onClick={onSignOut} aria-label="sign out"><Icon name="logout" size={15} /></button></div></div>
     </aside>
     {menuOpen && <button className="sidebar-backdrop" aria-label="close navigation" onClick={() => setMenuOpen(false)} />}
     <main className="workspace-main">
@@ -94,7 +94,7 @@ function Facility({ data, onNavigate }) {
     <PageHead eyebrow="facility intelligence" title={data.name} copy={`${data.type} · ${data.region}`} action={<Button onClick={() => onNavigate('candidates')}>view safe candidates</Button>} />
     <section className="risk-banner"><div><span>active medicine risk</span><h2>{data.medicine}</h2><p>{data.presentation} · {data.freshness}</p></div><div><span>risk score</span><strong>{data.riskScore}<small>/100</small></strong><RiskPill tone={data.risk}>critical</RiskPill></div></section>
     <div className="stat-grid four facility-stats"><Stat label="effective stock" value={`${data.effectiveStock} ${data.unit}`} detail="usable, compatible, and in-date" /><Stat label="daily demand" value={`${data.dailyDemand} ${data.unit}/day`} detail="forecasted average consumption" /><Stat label="incoming supply" value={`${data.incomingSupply.amount} ${data.unit}`} detail={`${data.incomingSupply.status}, ${data.incomingSupply.eta}`} tone="watch" /><Stat label="coverage remaining" value={`${data.daysRemaining} days`} detail="below the 4-day threshold" tone="critical" /></div>
-    <div className="detail-grid"><Card><div className="card-heading"><div><h2>forecast timeline</h2><p>projected usable stock through the next 14 days</p></div><span>— effective stock</span></div><ForecastChart values={data.series} /><div className="warning-note"><strong>projected stockout in {data.daysRemaining} days</strong><p>replenishment is expected after the projected stockout date.</p></div></Card><Card className="evidence"><h2>why this is flagged</h2><div><span>primary cause</span><strong>{data.cause}</strong><p>recent daily consumption is above the rolling baseline.</p></div><div><span>forecast confidence</span><strong>{data.confidence}</strong><p>this prototype clearly marks its data confidence and limitation.</p></div><div><span>data freshness</span><strong>current inventory signal</strong><p>{data.freshness}</p></div></Card></div>
+    <div className="detail-grid"><Card><div className="card-heading"><div><h2>forecast timeline</h2><p>projected usable stock through the next 14 days</p></div><span>— effective stock</span></div><ForecastChart values={data.series} /><div className="warning-note"><strong>projected stockout in {data.daysRemaining} days</strong><p>replenishment is expected after the projected stockout date.</p></div></Card><Card className="evidence"><h2>why this is flagged</h2><div><span>primary cause</span><strong>{data.cause}</strong><p>{data.explanation}</p></div><div><span>forecast confidence</span><strong>{data.confidence}</strong><p>{data.confidenceReason}</p></div><div><span>data freshness</span><strong>current inventory signal</strong><p>{data.freshness}</p></div></Card></div>
     <Card className="workflow"><div><p className="eyebrow">safe workflow</p><h2>resolve this alert in three clear steps</h2></div><ol>{data.nextSteps.map((step, index) => <li key={step}><b>{index + 1}</b>{step}</li>)}</ol><Button primary onClick={() => onNavigate('candidates')}>review candidates</Button></Card>
   </>;
 }
@@ -164,13 +164,22 @@ function App() {
   const [simulationBusy, setSimulationBusy] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [toast, setToast] = useState('');
+  const [viewErrors, setViewErrors] = useState({});
+  const refreshInFlight = useRef(false);
 
-  const load = async () => {
-    setLoading(true); setError('');
+  const load = async (background = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    if (!background) setLoading(true);
+    setError('');
     try {
-      const [dashboard, facility, candidates, simulation, plan, audit] = await Promise.all([medrippleApi.getDashboard(), medrippleApi.getFacility(), medrippleApi.getCandidates(), medrippleApi.simulate(), medrippleApi.getPlan(), medrippleApi.getAudit()]);
-      setPayload({ dashboard, facility, candidates, simulation, plan, audit });
-    } catch (err) { setError(err.message || 'we could not load the regional workspace.'); } finally { setLoading(false); }
+      const dashboard = await medrippleApi.getDashboard();
+      setPayload((current) => ({ ...current, dashboard }));
+    } catch (err) {
+      if (err.status === 401) setUser(null);
+      else if (background) setToast(`Refresh failed: ${err.message}. Displayed data may be stale.`);
+      else setError(err.message || 'we could not load the regional workspace.');
+    } finally { setLoading(false); refreshInFlight.current = false; }
   };
 
   useEffect(() => {
@@ -182,6 +191,26 @@ function App() {
     return () => { active = false; };
   }, []);
   useEffect(() => { if (user) load(); }, [user]);
+  useEffect(() => {
+    if (!user) return undefined;
+    const refresh = () => { if (!document.hidden) load(true); };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [user]);
+  useEffect(() => {
+    if (!user || view === 'dashboard') return undefined;
+    let active = true;
+    const key = view === 'simulator' ? 'simulation' : view;
+    const loaders = { facility: () => medrippleApi.getFacility(), candidates: () => medrippleApi.getCandidates(), simulation: () => medrippleApi.simulate(), plan: () => medrippleApi.getPlan(), audit: () => medrippleApi.getAudit() };
+    setViewErrors((current) => ({ ...current, [key]: '' }));
+    loaders[key]().then((value) => {
+      if (active) setPayload((current) => ({ ...current, [key]: value }));
+    }).catch((err) => {
+      if (active) setViewErrors((current) => ({ ...current, [key]: err.message }));
+    });
+    return () => { active = false; };
+  }, [user, view]);
   useEffect(() => { if (!toast) return undefined; const timeout = window.setTimeout(() => setToast(''), 3500); return () => window.clearTimeout(timeout); }, [toast]);
 
   const onAuthenticated = (sessionUser) => {
@@ -218,18 +247,21 @@ function App() {
 
   const page = useMemo(() => {
     if (!payload.dashboard) return null;
+    const key = view === 'simulator' ? 'simulation' : view;
+    if (viewErrors[key]) return <EmptyOrError title="This section is temporarily unavailable" copy={viewErrors[key]} retry={() => setView('dashboard')} />;
+    if (payload[key] === undefined) return <p role="status">Loading {view} from the backend…</p>;
     if (view === 'facility') return <Facility data={payload.facility} onNavigate={setView} />;
     if (view === 'candidates') return <Candidates data={payload.candidates} onNavigate={setView} />;
     if (view === 'simulator') return <Simulator data={payload.simulation} busy={simulationBusy} onHorizon={changeHorizon} onNavigate={setView} />;
     if (view === 'plan') return <Plan data={payload.plan} decisionBusy={decisionBusy} onDecision={decide} onLifecycle={transitionPlan} onNavigate={setView} canApprove={['APPROVER', 'ADMIN'].includes(user?.role)} />;
     if (view === 'audit') return <Audit rows={payload.audit} />;
     return <Dashboard data={payload.dashboard} onNavigate={setView} />;
-  }, [view, payload, simulationBusy, decisionBusy, user]);
+  }, [view, payload, viewErrors, simulationBusy, decisionBusy, user]);
 
   if (!authReady || loading || (user && !payload.dashboard && !error)) return <div className="app-state"><Icon name="ripple" size={28} /><strong>loading medripple</strong><span>preparing your regional resilience snapshot…</span></div>;
   if (!user) return <AuthScreen api={medrippleApi} onAuthenticate={onAuthenticated} />;
-  if (error) return <div className="app-state"><EmptyOrError title="regional workspace unavailable" copy={error} retry={load} /></div>;
-  return <><Shell active={view} onNavigate={setView} menuOpen={menuOpen} setMenuOpen={setMenuOpen} snapshotAt={payload.dashboard.snapshotAt} dateLabel={payload.dashboard.dateLabel} user={user} onSignOut={onSignOut}>{page}</Shell>{toast && <div className="toast"><Icon name="check" size={15} />{toast}<button onClick={() => setToast('')} aria-label="dismiss"><Icon name="close" size={14} /></button></div>}</>;
+  if (error) return <div className="app-state"><EmptyOrError title="regional workspace unavailable" copy={error} retry={() => load()} /><Button onClick={onSignOut}>sign out</Button></div>;
+  return <><Shell active={view} onNavigate={setView} menuOpen={menuOpen} setMenuOpen={setMenuOpen} snapshotAt={payload.dashboard.snapshotAt} dateLabel={payload.dashboard.dateLabel} facilityCount={payload.dashboard.facilities.length} user={user} onSignOut={onSignOut}>{page}</Shell>{toast && <div className="toast"><Icon name="check" size={15} />{toast}<button onClick={() => setToast('')} aria-label="dismiss"><Icon name="close" size={14} /></button></div>}</>;
 }
 
 export default App;
